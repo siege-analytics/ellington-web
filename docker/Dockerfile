@@ -38,7 +38,7 @@ RUN apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Python Installer Config
-COPY pip.conf /etc/pip.conf
+COPY docker/pip.conf /etc/pip.conf
 
 # Activate Python Virtual Environment
 RUN python3 -m venv ${PYTHON_VENV_PATH}
@@ -56,13 +56,23 @@ RUN pip install --trusted-host pypi.python.org --upgrade pip --default-timeout=1
  && echo "succesfully built python gdal bindings"
 
 # Install PIP requirements
-ADD requirements.txt /tmp/
+ADD docker/requirements.txt /tmp/
 RUN pip install --trusted-host pypi.python.org --default-timeout=1200 --upgrade pip -r /tmp/requirements.txt
 
 # Container entrypoint
-COPY ./entrypoint.sh /entrypoint.sh
+COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
-# set work directory
-WORKDIR /usr/src/app
+# Bake the Django source into the image, then set WORKDIR to the project
+# root (where manage.py lives) so daphne's `ellington_web.asgi:application`
+# resolves against the inner project package.
+COPY app/ /usr/src/app/
+WORKDIR /usr/src/app/ellington_web
+
+EXPOSE 8080
+
+# ASGI runtime — matches the substrate's port-8080 design note in
+# ellington-web-manifests/base/deployment.yaml. The entrypoint runs
+# Django migrations + collectstatic and then exec's whatever CMD is set.
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8080", "ellington_web.asgi:application"]
