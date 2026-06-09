@@ -130,6 +130,59 @@ Both `ellington-web` and `ellington-web-manifests`:
 - One ticket per PR; ticket reference in every commit
 - 0 required approvals (solo dev), but PR gate is enforced
 
+## Technology stack
+
+Candidates named in the original brief at session start. Treat as the **default** for each role unless something else proves itself — but don't lock in until the relevant sub-* actually starts.
+
+### Audio pipeline (sub-4)
+
+| Layer | Primary | Notes |
+|---|---|---|
+| Stem splitting | **[Demucs](https://github.com/facebookresearch/demucs)** | facebookresearch; current SOTA quality for music source separation. GPU-accelerated. |
+| Stem splitting (fallback) | [Spleeter](https://github.com/deezer/spleeter) | deezer; faster, lower quality. Useful for cheap previews or CPU-only paths. |
+| Pitch detection | [CREPE](https://github.com/marl/crepe), [aubio](https://aubio.org/) | CREPE is neural and accurate; aubio is the classic DSP toolkit for onset/pitch/beat. |
+| Chord recognition | [chordino](https://www.vamp-plugins.org/plugin-doc/chordino.html), [madmom](https://github.com/CPJKU/madmom), [Essentia](https://essentia.upf.edu/) | Compare on the first batch of Demucs-separated guitar stems. Chordino is the old standard; madmom + Essentia are stronger on jazz. |
+| General DSP | [librosa](https://librosa.org/), [Essentia](https://essentia.upf.edu/) | librosa for prototyping, Essentia for production-quality analysis. |
+| Audio CLI | [SoX](https://sox.sourceforge.net/) | Format conversion, normalization, resampling. Always available. |
+| Speech (optional) | [Whisper](https://github.com/openai/whisper), [WhisperX](https://github.com/m-bain/whisperX) | If the practice loop ever needs spoken-instruction transcription. WhisperX adds word-level alignment. |
+
+### LLM coach (sub-5)
+
+| Layer | Primary | Notes |
+|---|---|---|
+| Inference server | **[vLLM](https://github.com/vllm-project/vllm)** | If running on a GPU node. PagedAttention gives the right throughput for the practice-loop use case. |
+| Inference server (lightweight) | [llama.cpp](https://github.com/ggerganov/llama.cpp) | CPU-friendly, useful for testing without GPU contention. |
+| Candidate models | Llama 3, Mistral, Qwen, Gemma, Phi | Decide on parameter size after sub-3 lands and the coach prompt shape is clear. Start with a 7B-class instruct model. |
+| TTS (if coach needs voice) | [XTTS](https://github.com/coqui-ai/TTS), [Bark](https://github.com/suno-ai/bark), [Coqui](https://github.com/coqui-ai/TTS), [piper](https://github.com/rhasspy/piper) | Default to piper (smallest + fastest) unless quality demands XTTS. |
+
+### Master Timeline + ingestion (sub-3)
+
+| Layer | Primary | Notes |
+|---|---|---|
+| Lead-sheet source | **iReal Pro** | Primary content source; ~89 mentions in the brief. Owns the Real Book canon. |
+| Interchange | [MusicXML](https://www.musicxml.com/) | Standard format for lead sheets. iReal Pro exports it; we ingest it. |
+| Web rendering | [VexFlow](https://www.vexflow.com/), [Verovio](https://www.verovio.org/) | VexFlow is the Vue/React-friendly canvas renderer; Verovio produces SVG and is closer to engraving quality. |
+| Songbook concepts | Songbook → Song → Section (AABA / etc.) → Measure → ChordEvent → VoicingReference | The ChordEvent.voicings_referenced links into sub-2's ported spike engine. |
+
+### Job orchestration
+
+Already in GST's `requirements.txt`:
+
+- [Celery](https://docs.celeryq.dev/) (98 mentions — distributed task queue, the canonical Django pattern)
+- [Redis](https://redis.io/) (27 — broker for Celery + Django cache)
+
+Considered for higher-level orchestration:
+
+- [n8n](https://n8n.io/) — visual workflow engine; might be the right home for the audio pipeline's "Demucs → CREPE → chordino → diff against timeline" flow if it grows beyond a single Celery task chain.
+- [Kafka](https://kafka.apache.org/) (20 mentions) — if scale ever demands streamed events; almost certainly not for v1.
+
+### Web frontend
+
+Open per the open-questions section, but tools named:
+
+- [tone.js](https://tonejs.github.io/) — Web Audio framework; in-browser metronome / loop playback / signal routing for the practice loop.
+- VexFlow / Verovio (above) — for in-browser score display.
+
 ## Decisions log
 
 Decisions made tonight (2026-06-08 evening into 2026-06-09 early morning) that affect future work:
