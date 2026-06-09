@@ -8,6 +8,7 @@ django-grappelli
 djangorestframework
 djangorestframework-gis
 django-postgres-copy
+whitenoise
 celery[redis]
 flower
 apache-sedona[spark,pandas,geopandas]
