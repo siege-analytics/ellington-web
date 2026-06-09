@@ -47,6 +47,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise must sit immediately after SecurityMiddleware so static
+    # files are served directly from the Daphne process — there is no
+    # nginx sidecar in the k8s deployment.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -65,6 +69,20 @@ AUTHENTICATION_BACKENDS = [
 # When False (default), the AuthentikHeaderMiddleware is a no-op so local dev
 # without Authentik in front can't be tricked by spoofed headers.
 AUTHENTIK_HEADER_TRUST = bool(int(os.environ.get("AUTHENTIK_HEADER_TRUST", "0")))
+
+# Django 4.0+ requires the request Origin host (sent by browsers on cross-origin
+# POSTs, including any TLS-terminating reverse proxy) to be in this allowlist
+# before CSRF tokens validate. Env-driven so dev / staging / prod can each
+# carry their own host. Comma-separated, scheme-included
+# (https://ellington.siegeanalytics.com).
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
+]
+
+# WhiteNoise hashes static asset filenames and serves them with
+# Cache-Control: max-age=1y — gives admin static a real CDN-like profile
+# even without one in front.
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 ROOT_URLCONF = 'ellington_web.urls'
 
