@@ -1,0 +1,50 @@
+# CodeRabbit AI Code Review Configuration
+# https://docs.coderabbit.ai/getting-started/yaml-configuration
+#
+# This file configures automated PR reviews for geodjango_simple_template.
+# Install the CodeRabbit GitHub App first: https://coderabbit.ai
+# This config takes precedence over UI settings when present.
+
+language: en-US
+
+reviews:
+  # Automatically review every PR
+  auto_review:
+    enabled: true
+    # Don't review draft PRs until they're marked ready
+    drafts: false
+    # Review PRs targeting any branch
+    base_branches:
+      - ".*"
+
+  # Generate a high-level summary at the top of each review
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+
+  # Path-specific review instructions
+  path_instructions:
+    - path: "docker/**"
+      instructions: >
+        Review Dockerfiles for security best practices: no running as root,
+        minimal attack surface, proper layer caching, no hardcoded credentials.
+        Check that base images are pinned and up to date.
+
+    - path: "**/*.py"
+      instructions: >
+        Check for proper error handling, type hints, and Django best practices.
+        Ensure no credentials are hardcoded. Verify geospatial operations
+        use correct SRID handling.
+
+    - path: "**/*.sql"
+      instructions: >
+        Review for SQL injection risks, correct use of parameterised queries,
+        and PostGIS/AGE function usage.
+
+  # Files to skip during review
+  path_filters:
+    - "!**/.gitkeep"
+    - "!docs/**"
+
+chat:
+  auto_reply: true
