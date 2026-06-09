@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "rest_framework",
     'rest_framework_gis',
     "locations",
+    "apps.core",
 ]
 
 MIDDLEWARE = [
@@ -50,9 +51,20 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'apps.core.auth.middleware.AuthentikHeaderMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+AUTHENTICATION_BACKENDS = [
+    "apps.core.auth.backends.AuthentikRemoteUserBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+# When True, trust X-authentik-* headers (production behind the Authentik outpost).
+# When False (default), the AuthentikHeaderMiddleware is a no-op so local dev
+# without Authentik in front can't be tricked by spoofed headers.
+AUTHENTIK_HEADER_TRUST = bool(int(os.environ.get("AUTHENTIK_HEADER_TRUST", "0")))
 
 ROOT_URLCONF = 'ellington_web.urls'
 
