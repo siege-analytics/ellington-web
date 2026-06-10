@@ -1,0 +1,659 @@
+{
+  "schemaVersion": "v1",
+  "styles": [
+    {
+      "id": "bossa-nova",
+      "name": "Bossa Nova",
+      "summary": "Brazilian-rooted style fusing samba rhythm with cool-jazz harmonic sensibility. Characterized by syncopated guitar comping (the 'bossa pattern'), gentle harmonic motion through extended chords with 9 and #11 colors, and a soft dynamic that leaves space for the singer / melody line.",
+      "voicing_style_tag_affinity": {
+        "chord-melody": 0.3,
+        "shell": 0.4,
+        "guide-tones": 0.6,
+        "drop-2": 0.5
+      },
+      "rhythmic_signature": {
+        "anticipated_beats": [
+          "upbeat-of-2",
+          "and-of-4"
+        ],
+        "accent_pattern": "syncopated-with-bass-anchor-on-1-3",
+        "density": "sparse",
+        "typical_tempo_range_bpm": [
+          120,
+          160
+        ]
+      },
+      "harmonic_signature": {
+        "chromatic_motion_tolerance": "low",
+        "substitution_density": "moderate",
+        "color_tone_preference": [
+          "9",
+          "11",
+          "13",
+          "#11"
+        ],
+        "characteristic_progressions": [
+          "ii-V-I with 9-color tonic",
+          "I-VI-ii-V cycle",
+          "descending-ii-V chains"
+        ]
+      },
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "maj7",
+          "function_role": "tonic-with-color",
+          "narrative": "[placeholder] In bossa, maj7 tonic typically lifts to maj9 or maj7(#11). The bossa pattern places the chord on the upbeat of 2 with a sustaining bass on 1 and 3. Real prescriptive content backfilled via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        },
+        {
+          "chord_quality": "min7",
+          "function_role": "predominant-with-9",
+          "narrative": "[placeholder] m7 voicings in bossa favor the 9 on top, drop-2 shape across strings 5-2. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_style": "bebop",
+          "shared_dimensions": [
+            "ii-V-I as base progression",
+            "extended-chord vocabulary"
+          ],
+          "diverging_dimensions": [
+            "density",
+            "onset placement",
+            "chromatic tolerance"
+          ],
+          "characteristic_quote": "[placeholder] You're using bebop chords in bossa rhythm \u2014 try lifting the density and anticipating the upbeat. Real quote backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "joe-pass",
+          "exemplar_principle_ids": [
+            "three-to-four-note-voicings-with-voice-leading"
+          ]
+        }
+      ],
+      "diagnostic_examples": []
+    },
+    {
+      "id": "bebop",
+      "name": "Bebop",
+      "summary": "Post-WWII jazz style centered on dense chromatic improvisation, fast tempos, and intricate harmonic substitution. Comping is rhythmically aggressive with anticipated upbeats and ample chromatic passing chords; voicings emphasize R-3-7 shells dressed with altered tensions on dominants.",
+      "voicing_style_tag_affinity": {
+        "pass": 0.9,
+        "shell": 1.0,
+        "drop-2": 0.8,
+        "drop-3": 0.6,
+        "altered-dominant": 0.9,
+        "tritone-sub": 0.7
+      },
+      "rhythmic_signature": {
+        "anticipated_beats": [
+          "upbeat-of-4",
+          "and-of-2",
+          "and-of-4"
+        ],
+        "accent_pattern": "syncopated-eighths-with-chromatic-passing",
+        "density": "dense",
+        "typical_tempo_range_bpm": [
+          180,
+          280
+        ]
+      },
+      "harmonic_signature": {
+        "chromatic_motion_tolerance": "high",
+        "substitution_density": "high",
+        "color_tone_preference": [
+          "b9",
+          "#9",
+          "#11",
+          "b13"
+        ],
+        "characteristic_progressions": [
+          "rapid ii-V-I cycles",
+          "tritone-sub V7s",
+          "diminished-passing on every weak beat",
+          "Coltrane-changes (three-tonic substitution)"
+        ]
+      },
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "dom7",
+          "function_role": "dominant-with-alteration-mandate",
+          "narrative": "[placeholder] In bebop, V7 is rarely played 'plain.' Standard prescriptions: voice as V7alt (b9, #9, #5, b5) on string set 6-3 with the b9 or #9 on top, or substitute the tritone bII7 voiced as a shell with the b5 implied. Real prescriptive content via #419 (mickey-baker run is queued as bebop exemplar).",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        },
+        {
+          "chord_quality": "min7b5",
+          "function_role": "predominant-in-minor-ii-V-i",
+          "narrative": "[placeholder] m7b5 in bebop is the ii of minor ii-V-i, typically voiced as drop-2 with the b5 anchored on string 3 and resolving chromatically downward into the altered V7. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_style": "bossa-nova",
+          "shared_dimensions": [
+            "ii-V-I as base progression",
+            "extended-chord vocabulary"
+          ],
+          "diverging_dimensions": [
+            "density",
+            "onset placement",
+            "chromatic tolerance"
+          ],
+          "characteristic_quote": "[placeholder] A bebop player would say: 'You're playing bossa rhythm with bebop chord density \u2014 relax the chromatic passing and let the bass breathe.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "joe-pass",
+          "exemplar_principle_ids": [
+            "walking-bass-plus-chord-stabs",
+            "dominant-alteration-substitution-lattice"
+          ]
+        },
+        {
+          "master_id": "mickey-baker",
+          "exemplar_principle_ids": [
+            "four-named-substitution-principles-as-lattice"
+          ]
+        }
+      ],
+      "diagnostic_examples": []
+    },
+    {
+      "id": "cool-jazz",
+      "name": "Cool Jazz",
+      "summary": "Lyrical post-bop tradition rooted in the Tristano / Konitz / Marsh lineage and carried into guitar by Jim Hall, Lenny Breau, and Johnny Smith. Characterized by medium tempos, behind-the-beat phrasing, quartal stacks, and a contemplative density that leaves space \u2014 a deliberate counterweight to bebop's relentless density.",
+      "voicing_style_tag_affinity": {
+        "hall": 0.9,
+        "breau": 0.7,
+        "quartal": 0.9,
+        "shell": 0.5,
+        "chord-melody": 0.4
+      },
+      "rhythmic_signature": {
+        "anticipated_beats": [
+          "on-beat",
+          "behind-the-beat"
+        ],
+        "accent_pattern": "lyrical-behind-the-beat-phrasing",
+        "density": "moderate",
+        "typical_tempo_range_bpm": [
+          140,
+          200
+        ]
+      },
+      "harmonic_signature": {
+        "chromatic_motion_tolerance": "low",
+        "substitution_density": "moderate",
+        "color_tone_preference": [
+          "9",
+          "11",
+          "#11",
+          "13"
+        ],
+        "characteristic_progressions": [
+          "ii-V-I with lingering tonic color",
+          "modal interchange via bIII / bVI",
+          "quartal-stack pedal harmony"
+        ]
+      },
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "maj7",
+          "function_role": "tonic-with-lingering-color",
+          "narrative": "[placeholder] In cool jazz, maj7 typically lifts to maj7(#11) for the Lydian color; voicings prefer wide intervals (quartal stacks or open-spread drop-3s) over close drop-2s. Backfill via #419 (jim-hall extraction).",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        },
+        {
+          "chord_quality": "min7",
+          "function_role": "predominant-with-space",
+          "narrative": "[placeholder] m7 in cool jazz uses moveable quartal voicings on adjacent string sets, often left to ring as the line breathes. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_style": "bebop",
+          "shared_dimensions": [
+            "ii-V-I as base",
+            "extended-chord vocabulary"
+          ],
+          "diverging_dimensions": [
+            "density",
+            "tempo",
+            "phrasing-relationship-to-beat"
+          ],
+          "characteristic_quote": "[placeholder] A cool-jazz player would say: 'You're playing every eighth note \u2014 leave some space. Let the chord breathe before you move it.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "jim-hall",
+          "exemplar_principle_ids": [
+            "fourth-stacks-and-open-voicings",
+            "space-and-implied-harmony"
+          ]
+        },
+        {
+          "master_id": "lenny-breau",
+          "exemplar_principle_ids": [
+            "three-independent-voices"
+          ]
+        }
+      ],
+      "diagnostic_examples": []
+    },
+    {
+      "id": "gypsy-jazz",
+      "name": "Gypsy Jazz (Jazz Manouche)",
+      "summary": "Acoustic-guitar tradition founded by Django Reinhardt in 1930s France, carried forward by the Rosenberg, Lagrene, and Stochelo schools. Characterized by la pompe (down-up pump rhythm), diminished-heavy harmony, minor-6 instead of m7 as the natural minor sonority, and fast tempos. Distinct from electric jazz lineages in both physical idiom and harmonic vocabulary.",
+      "voicing_style_tag_affinity": {
+        "shell": 0.5,
+        "diminished": 0.9,
+        "walking-bass": 0.4
+      },
+      "rhythmic_signature": {
+        "anticipated_beats": [
+          "downbeats-with-la-pompe-upstroke"
+        ],
+        "accent_pattern": "la-pompe-down-up-with-percussive-mute",
+        "density": "dense",
+        "typical_tempo_range_bpm": [
+          200,
+          320
+        ]
+      },
+      "harmonic_signature": {
+        "chromatic_motion_tolerance": "moderate",
+        "substitution_density": "moderate",
+        "color_tone_preference": [
+          "6",
+          "b9",
+          "13"
+        ],
+        "characteristic_progressions": [
+          "minor blues",
+          "Django-mineur-progression",
+          "diminished-passing on every chromatic step"
+        ]
+      },
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "min6",
+          "function_role": "tonic-minor",
+          "narrative": "[placeholder] Gypsy jazz prefers m6 over m7 for the natural-minor tonic (Django convention). Voiced as drop-2 on string set 6-3 with the 6 on top. Backfill via #419 once we acquire a Django/Manouche method to distill.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        },
+        {
+          "chord_quality": "dim7",
+          "function_role": "passing-chromatic",
+          "narrative": "[placeholder] dim7 in gypsy jazz is the universal passing-chord \u2014 used between any two diatonic chords for chromatic motion, voiced compactly on the middle strings. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_style": "bebop",
+          "shared_dimensions": [
+            "fast tempos",
+            "harmonic-substitution mentality"
+          ],
+          "diverging_dimensions": [
+            "physical-idiom (acoustic vs electric)",
+            "rhythmic-pattern (la pompe vs walking 4)",
+            "harmonic-vocabulary (diminished-heavy vs altered-dominant-heavy)"
+          ],
+          "characteristic_quote": "[placeholder] A gypsy player would say: 'You're using bebop alterations on a manouche tune \u2014 try the diminished passing chord between the I and the VI instead.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [],
+      "diagnostic_examples": []
+    },
+    {
+      "id": "hard-bop",
+      "name": "Hard Bop",
+      "summary": "Late-1950s through 1960s extension of bebop with blues and gospel grounding. Kenny Burrell, Grant Green, and Wes Montgomery on guitar; Horace Silver and Art Blakey rhythm sections. Bluesier melodic vocabulary, less academic substitution density than straight bebop, and rhythmic settling into medium-up groove (the 'hard' part is the rhythm pocket, not the harmonic complexity).",
+      "voicing_style_tag_affinity": {
+        "shell": 0.9,
+        "drop-2": 0.7,
+        "guide-tones": 0.7,
+        "altered-dominant": 0.6,
+        "blues-vocabulary": 0.8
+      },
+      "rhythmic_signature": {
+        "anticipated_beats": [
+          "upbeat-of-4",
+          "and-of-2"
+        ],
+        "accent_pattern": "swing-eighths-with-bluesy-back-phrasing",
+        "density": "moderate",
+        "typical_tempo_range_bpm": [
+          120,
+          200
+        ]
+      },
+      "harmonic_signature": {
+        "chromatic_motion_tolerance": "moderate",
+        "substitution_density": "moderate",
+        "color_tone_preference": [
+          "b9",
+          "#9",
+          "13",
+          "b7"
+        ],
+        "characteristic_progressions": [
+          "I-IV blues changes layered over ii-V-I",
+          "minor blues with bIII bridge",
+          "tritone-sub on the V"
+        ]
+      },
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "dom7",
+          "function_role": "dominant-with-blues-color",
+          "narrative": "[placeholder] In hard bop, V7 voicings emphasize the #9 (the blues-third-as-color) over the b9, and ride on a R-3-7 shell with the #9 added on top. Backfill via #419 once we distill Burrell or Green; today's corpus has neither.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_style": "bebop",
+          "shared_dimensions": [
+            "ii-V-I harmonic spine",
+            "altered dominant tensions",
+            "swing-eighth phrasing"
+          ],
+          "diverging_dimensions": [
+            "bluesy-vs-academic",
+            "substitution-density",
+            "tempo-range"
+          ],
+          "characteristic_quote": "[placeholder] A hard-bop player would say: 'You're being too academic \u2014 pocket the rhythm, let the blue notes carry, drop the substitution.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "wes-montgomery"
+        }
+      ],
+      "diagnostic_examples": []
+    },
+    {
+      "id": "modal-jazz",
+      "name": "Modal Jazz",
+      "summary": "Post-1959 (Kind-of-Blue era) jazz where harmony rests on modes rather than functional ii-V-I motion. Slow harmonic rhythm (one chord per 4-8 bars), pedal points, quartal voicings, and scalar improvisation. Guitar interpretations from Wes Montgomery (modal sections of compositions) and Jim Hall on modal tunes; piano-derived voicings (McCoy Tyner) translate to guitar via quartal stacks.",
+      "voicing_style_tag_affinity": {
+        "quartal": 1.0,
+        "shell": 0.4,
+        "hall": 0.7,
+        "open-voicings": 0.8
+      },
+      "rhythmic_signature": {
+        "anticipated_beats": [
+          "on-beat",
+          "open-time"
+        ],
+        "accent_pattern": "loose-pulse-with-pedal-anchoring",
+        "density": "sparse",
+        "typical_tempo_range_bpm": [
+          80,
+          180
+        ]
+      },
+      "harmonic_signature": {
+        "chromatic_motion_tolerance": "low",
+        "substitution_density": "low",
+        "color_tone_preference": [
+          "11",
+          "#11",
+          "13",
+          "9"
+        ],
+        "characteristic_progressions": [
+          "one-chord-per-section vamps",
+          "Dorian-Phrygian shifts",
+          "pedal-with-upper-structure-cycling"
+        ]
+      },
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "min7",
+          "function_role": "modal-center",
+          "narrative": "[placeholder] In modal jazz, m7 functions as a modal center (Dorian if natural-7, Phrygian if b2 in melody). Voicings prefer quartal stacks (3-7-11 or 7-3-13) over functional drop-2 shapes. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_style": "bebop",
+          "shared_dimensions": [
+            "jazz harmonic vocabulary",
+            "swing-feel pulse"
+          ],
+          "diverging_dimensions": [
+            "harmonic-rhythm (modal slow vs bebop fast)",
+            "function-vs-mode",
+            "substitution-density"
+          ],
+          "characteristic_quote": "[placeholder] A modal player would say: 'Stop trying to substitute \u2014 there's no ii-V here. Let the mode be the chord.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "jim-hall",
+          "exemplar_principle_ids": [
+            "fourth-stacks-and-open-voicings"
+          ]
+        },
+        {
+          "master_id": "wes-montgomery"
+        }
+      ],
+      "diagnostic_examples": []
+    },
+    {
+      "id": "standards",
+      "name": "Standards (Tin Pan Alley Songbook)",
+      "summary": "Harmonic substrate underneath most jazz styles: the Tin Pan Alley and Broadway songbook (Porter, Gershwin, Kern, Rodgers, etc.). Diatonic harmony with secondary dominants, ii-V-I cycles, AABA forms. Most masters teach 'over standards,' so this is less a discrete style than the common ground every other style modifies. Useful as the comparator's baseline against which other styles' deviations are measured.",
+      "voicing_style_tag_affinity": {
+        "chord-melody": 0.8,
+        "pass": 0.9,
+        "van-eps": 0.8,
+        "shell": 0.6,
+        "drop-2": 0.8,
+        "guide-tones": 0.7
+      },
+      "rhythmic_signature": {
+        "anticipated_beats": [
+          "on-beat"
+        ],
+        "accent_pattern": "swing-quarters-or-medium-shuffle",
+        "density": "moderate",
+        "typical_tempo_range_bpm": [
+          100,
+          240
+        ]
+      },
+      "harmonic_signature": {
+        "chromatic_motion_tolerance": "low",
+        "substitution_density": "low",
+        "color_tone_preference": [
+          "9",
+          "13",
+          "6"
+        ],
+        "characteristic_progressions": [
+          "ii-V-I in every key",
+          "secondary-dominant cycles",
+          "I-VI-ii-V turnaround",
+          "rhythm-changes"
+        ]
+      },
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "maj7",
+          "function_role": "tonic",
+          "narrative": "[placeholder] In standards, maj7 is voiced as drop-2 or drop-3 on string sets typical of the chord-melody tradition (Pass/Van Eps/Galbraith). The 9 and 6/9 are color additions; the #11 is reserved for tunes that specifically call for it. Backfill via #419 once we run Pass / Van Eps with the prescriptive prompt.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        },
+        {
+          "chord_quality": "dom7",
+          "function_role": "dominant",
+          "narrative": "[placeholder] V7 in standards is the workhorse functional dominant \u2014 voiced with R-3-b7 or 3-b7-9 guide-tone-led shapes, with the 13 as a color tone. Altered tensions (b9, #9, b13) are STYLISTIC modifications (bebop-flavored or modal-flavored) layered on top of the standards baseline. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_style": "bebop",
+          "shared_dimensions": [
+            "ii-V-I as the base"
+          ],
+          "diverging_dimensions": [
+            "substitution-density",
+            "alteration-density"
+          ],
+          "characteristic_quote": "[placeholder] A standards player would say: 'You're substituting on every chord \u2014 try playing the changes first. The melody knows what it wants.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "joe-pass"
+        },
+        {
+          "master_id": "van-eps"
+        },
+        {
+          "master_id": "barry-galbraith"
+        }
+      ],
+      "diagnostic_examples": []
+    },
+    {
+      "id": "berklee-consensus",
+      "name": "Berklee Consensus (Modern Pedagogical Default)",
+      "summary": "The implicit pedagogical baseline most modern jazz-school graduates carry: drop-2 voicings on standard string sets, shell-plus-tensions, function-based chord-scale theory, altered-dominant defaults, and ii-V-I as the canonical exercise. Codified across the Aebersold play-along series, the Coker / Heussenstamm-Silbergleit pedagogical literature, and the Berklee curriculum. Useful as the 'neutral' style against which actual style choices stand out.",
+      "voicing_style_tag_affinity": {
+        "drop-2": 1.0,
+        "shell": 0.9,
+        "function-assigned": 0.9,
+        "chord-function-driven": 0.9,
+        "guide-tones": 0.8,
+        "altered-dominant": 0.7
+      },
+      "rhythmic_signature": {
+        "anticipated_beats": [
+          "on-beat",
+          "and-of-4"
+        ],
+        "accent_pattern": "swing-eighths-medium",
+        "density": "moderate",
+        "typical_tempo_range_bpm": [
+          120,
+          220
+        ]
+      },
+      "harmonic_signature": {
+        "chromatic_motion_tolerance": "moderate",
+        "substitution_density": "moderate",
+        "color_tone_preference": [
+          "9",
+          "13",
+          "b9",
+          "#11"
+        ],
+        "characteristic_progressions": [
+          "ii-V-I in all 12 keys",
+          "minor ii-V-i with altered V",
+          "Coltrane changes as exercise",
+          "modal interchange"
+        ]
+      },
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "min7",
+          "function_role": "predominant-or-tonic-minor",
+          "narrative": "[placeholder] In the Berklee Consensus, m7 voicings are drop-2 on string sets 5-2 or 4-1 with the 9 added when context allows; minor-tonic gets m9 or m11 coloring. Standard exercise: voice-lead m7 \u2192 V7alt \u2192 I across all 12 keys. Backfill via #419 once we run aebersold or warnock or heussenstamm-silbergleit.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        },
+        {
+          "chord_quality": "dom7alt",
+          "function_role": "dominant-with-altered-tension",
+          "narrative": "[placeholder] V7alt in the Consensus is voiced as a drop-2 on string set 6-3 with the b13 on top, or as a shell with the #9-b9 cluster added. Used in every minor ii-V-i and as a substitute V in major ii-V-Is. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_style": "bebop",
+          "shared_dimensions": [
+            "ii-V-I as the base",
+            "altered-dominant vocabulary",
+            "drop-2 voicing tradition"
+          ],
+          "diverging_dimensions": [
+            "substitution-aggression",
+            "rhythmic-density",
+            "academic-vs-played"
+          ],
+          "characteristic_quote": "[placeholder] A bebop player would say: 'You're playing it like the textbook \u2014 but the textbook doesn't teach where to push and where to lay back. Try messing up the rhythm a little.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        },
+        {
+          "vs_style": "modal-jazz",
+          "shared_dimensions": [
+            "jazz harmonic vocabulary"
+          ],
+          "diverging_dimensions": [
+            "function-vs-mode-orientation",
+            "substitution-frequency",
+            "harmonic-rhythm"
+          ],
+          "characteristic_quote": "[placeholder] A modal player would say: 'You're running ii-V-I where there isn't one. The chart says Dm7 for 8 bars \u2014 stop modulating.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "matt-warnock"
+        },
+        {
+          "master_id": "jamey-aebersold"
+        },
+        {
+          "master_id": "brent-vaartstra"
+        },
+        {
+          "master_id": "heussenstamm-silbergleit"
+        }
+      ],
+      "diagnostic_examples": []
+    }
+  ]
+}

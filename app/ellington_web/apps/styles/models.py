@@ -44,6 +44,17 @@ class Master(models.Model):
         default=True,
         help_text="True until catalog-sync replaces with real plugin data.",
     )
+    extra = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Plugin-side fields not modelled as columns yet — "
+            "prescriptive_lessons, example_masters, diagnostic_examples, "
+            "etc. sync_plugin_catalogs writes the whole non-mapped subset "
+            "here so consumers can read it via the .extra accessor without "
+            "us having to migrate every time the plugin schema grows."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -99,6 +110,17 @@ class Style(models.Model):
         default=True,
         help_text="True until catalog-sync replaces with real plugin data.",
     )
+    extra = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Plugin-side fields not modelled as columns yet — "
+            "prescriptive_lessons, example_masters, diagnostic_examples, "
+            "etc. sync_plugin_catalogs writes the whole non-mapped subset "
+            "here so consumers can read it via the .extra accessor without "
+            "us having to migrate every time the plugin schema grows."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -120,6 +142,17 @@ class Idiom(models.Model):
     is_placeholder = models.BooleanField(
         default=True,
         help_text="True until catalog-sync replaces with real plugin data.",
+    )
+    extra = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Plugin-side fields not modelled as columns yet — "
+            "prescriptive_lessons, example_masters, diagnostic_examples, "
+            "etc. sync_plugin_catalogs writes the whole non-mapped subset "
+            "here so consumers can read it via the .extra accessor without "
+            "us having to migrate every time the plugin schema grows."
+        ),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
