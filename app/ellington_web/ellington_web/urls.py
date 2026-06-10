@@ -25,4 +25,5 @@ urlpatterns = [
     path("accounts/", include("django.contrib.auth.urls")),  # Django auth URLs
     path("api-auth/", include("rest_framework.urls")),
     path("locations/", include("locations.urls")),
+    path("critique/", include("apps.styles.urls")),
 ]
