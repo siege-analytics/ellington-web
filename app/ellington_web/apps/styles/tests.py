@@ -612,3 +612,182 @@ class CritiquePreviewViewTests(TestCase):
             "/critique/preview/", data=json.dumps(body), content_type="application/json",
         )
         self.assertEqual(response.status_code, 404)
+
+
+# ---------------------------------------------------------------------------
+# sync_plugin_catalogs tests
+# ---------------------------------------------------------------------------
+
+
+from pathlib import Path
+
+
+PLUGIN_FIXTURE_DIR = Path(__file__).parent / "tests_data"
+
+
+class SyncPluginCatalogsCommandTests(TestCase):
+    def test_imports_styles_and_idioms(self):
+        out = StringIO()
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            stdout=out,
+        )
+        # Plugin shipped 8 styles + 2 idioms (per PR #421 / #422 / #425)
+        self.assertEqual(Style.objects.count(), 8)
+        self.assertEqual(Idiom.objects.count(), 2)
+        # All imported rows go non-placeholder
+        self.assertTrue(all(not s.is_placeholder for s in Style.objects.all()))
+        self.assertTrue(all(not i.is_placeholder for i in Idiom.objects.all()))
+
+    def test_imported_styles_carry_divergence_notes(self):
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            stdout=StringIO(),
+        )
+        bebop = Style.objects.get(slug="bebop")
+        notes = bebop.divergence_notes
+        self.assertTrue(notes, "bebop should carry divergence_notes from plugin v1")
+        # vs_style cross-reference shape preserved
+        bossa_note = next((n for n in notes if n.get("vs_style") == "bossa-nova"), None)
+        self.assertIsNotNone(bossa_note)
+        self.assertIn("characteristic_quote", bossa_note)
+        self.assertEqual(bossa_note.get("provenance"), "placeholder")
+
+    def test_unmapped_plugin_fields_land_in_extra(self):
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            stdout=StringIO(),
+        )
+        bebop = Style.objects.get(slug="bebop")
+        # prescriptive_lessons and example_masters aren't dedicated columns —
+        # they should land in extra
+        self.assertIn("prescriptive_lessons", bebop.extra)
+        self.assertIn("example_masters", bebop.extra)
+        # diagnostic_examples might be empty in the v1 fixture but the key
+        # should still be there if the plugin entry had it
+        if "diagnostic_examples" in bebop.extra:
+            self.assertIsInstance(bebop.extra["diagnostic_examples"], list)
+
+    def test_empty_example_masters_handled_gracefully(self):
+        # gypsy-jazz has empty example_masters[] per plugin agent's note
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            stdout=StringIO(),
+        )
+        gypsy = Style.objects.get(slug="gypsy-jazz")
+        # Either the field is absent or it's an empty list — either is fine
+        ex_masters = gypsy.extra.get("example_masters")
+        self.assertTrue(ex_masters is None or ex_masters == [])
+
+    def test_idempotent_re_sync(self):
+        for _ in range(2):
+            call_command(
+                "sync_plugin_catalogs",
+                "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+                "--skip-masters",
+                stdout=StringIO(),
+            )
+        self.assertEqual(Style.objects.count(), 8)
+        self.assertEqual(Idiom.objects.count(), 2)
+
+    def test_preserves_seeded_only_rows(self):
+        # Seed first: gives us seeded entries the plugin hasn't shipped
+        # yet (in particular 'modal' as a placeholder)
+        call_command("seed_style_catalog", stdout=StringIO())
+        seeded_count = Style.objects.count()
+        # Now sync from plugin
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            stdout=StringIO(),
+        )
+        # Seeded-only slugs that the plugin DIDN'T ship should still exist
+        # (e.g. seed has 'modal', plugin ships 'modal-jazz' — different slug,
+        # both kept)
+        self.assertTrue(Style.objects.filter(slug="modal").exists())
+        # And those seeded-only rows should retain is_placeholder=True
+        seed_modal = Style.objects.get(slug="modal")
+        self.assertTrue(seed_modal.is_placeholder)
+        # Plugin-shipped slug retained correctly
+        self.assertTrue(Style.objects.filter(slug="modal-jazz").exists())
+        plugin_modal = Style.objects.get(slug="modal-jazz")
+        self.assertFalse(plugin_modal.is_placeholder)
+
+    def test_schema_version_mismatch_errors(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "styles.json").write_text(
+                json.dumps({"schemaVersion": "v99", "styles": []})
+            )
+            (Path(tmp) / "idioms.json").write_text(
+                json.dumps({"schemaVersion": "v1", "idioms": []})
+            )
+            from django.core.management.base import CommandError
+            with self.assertRaises(CommandError) as ctx:
+                call_command(
+                    "sync_plugin_catalogs",
+                    "--plugin-data-dir", tmp,
+                    "--skip-masters",
+                    stdout=StringIO(),
+                )
+            self.assertIn("v99", str(ctx.exception))
+            self.assertIn("v1", str(ctx.exception))
+
+    def test_comparator_runs_against_plugin_imported_data(self):
+        """End-to-end: import plugin styles + run comparator → triangle commentary
+        sourced from plugin's authored characteristic_quote (not seed stub).
+        """
+        from apps.styles.comparator import DetectedVoicing, critique_passage
+
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            stdout=StringIO(),
+        )
+
+        user = User.objects.create(username="plugin-import-test")
+        bossa = Style.objects.get(slug="bossa-nova")
+        gypsy = Style.objects.get(slug="gypsy-jazz")
+        target = StylePreset.objects.create(
+            slug="pi-t", display_name="t", style=bossa,
+        )
+        backing = StylePreset.objects.create(
+            slug="pi-b", display_name="b", style=gypsy,
+        )
+        sel = StyleSelection.objects.create(
+            user=user, target_preset=target, backing_preset=backing,
+        )
+
+        # Hit bebop's affinity tags — comparator should detect bebop
+        # and pull bebop's plugin-authored characteristic quote against bossa
+        bebop = Style.objects.get(slug="bebop")
+        # Pick a tag we know bebop favours
+        bebop_tag = next(iter(bebop.voicing_style_tag_affinity), None)
+        self.assertIsNotNone(bebop_tag, "bebop should have at least one tag in plugin v1")
+
+        passage = [
+            DetectedVoicing(chord_symbol="Cmaj7", voicing_style_tags=(bebop_tag,)),
+        ]
+        draft = critique_passage(passage, sel)
+        self.assertEqual(draft.detected_axes["style"]["slug"], "bebop")
+        commentary = "\n".join(draft.commentary_items)
+        # bebop's plugin-authored characteristic_quote vs bossa
+        # should appear in the commentary
+        self.assertIn("characteristic-quote:from=bebop:against=bossa-nova", commentary)
+        # AND it should NOT be the seeded "PLACEHOLDER —" prefix; should
+        # be the plugin's bracketed "[placeholder]" prefix from #421
+        self.assertIn("[placeholder]", commentary)
+        # placeholder_warning should NOT fire here — imported rows are
+        # is_placeholder=False even though their narrative is "placeholder"
+        # provenance per the plugin's annotation
+        self.assertFalse(draft.placeholder_warning)

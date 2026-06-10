@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "v1",
+  "idioms": [
+    {
+      "id": "chord-melody",
+      "name": "Chord Melody",
+      "description": "Solo-guitar idiom where the player carries the melody on top of the voicing while the lower notes provide harmony (and sometimes bass). The guitarist plays the role of the entire ensemble — melody, harmony, bass — within a single instrument. Most exemplified in the unaccompanied solo-guitar repertoire (Pass, Van Eps, Greene, Galbraith, Bertoncini).",
+      "characteristic_voicing_density": "moderate",
+      "characteristic_rhythmic_role": "melody on top with sustaining harmony underneath; bass anchors on downbeats; interior chord rhythm aligns with melodic phrasing rather than running 8ths/quarters independently",
+      "compatible_styles": ["bossa-nova", "cool-jazz", "standards", "ballad"],
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "maj7",
+          "function_role": "tonic-with-melody-on-top",
+          "narrative": "[placeholder] In chord-melody, maj7 voicings are typically drop-2 or drop-3 shapes with the melody note as the topmost voice. When the melody is the 3rd, voice the chord as R-7-3 closed; when the melody is the 9, lift to maj9. Real prescriptive content via #419 (bertoncini or galbraith run as the chord-melody exemplar).",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        },
+        {
+          "chord_quality": "dom7",
+          "function_role": "dominant-with-melody-leading-chromatically",
+          "narrative": "[placeholder] V7 in chord-melody often supports the melody through 3-7 guide-tone resolution. When the melody resolves down a half-step into the I, the V7 typically carries altered tensions (b9 or #9) to create the chromatic pull. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_idiom": "comping",
+          "shared_dimensions": ["voicing-tradition vocabulary", "voice-leading principles"],
+          "diverging_dimensions": ["who-carries-melody", "rhythmic-independence", "ensemble-role"],
+          "characteristic_quote": "[placeholder] A chord-melody player would say: 'You're playing comping rhythms — but there's no one else playing the melody. Lift the top voice up to the melody and let the comping be the interior.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "joe-pass",
+          "exemplar_principle_ids": ["drop-2-and-drop-3-chord-melody"]
+        },
+        {
+          "master_id": "van-eps",
+          "exemplar_principle_ids": ["harmonized-scale-foundation", "outer-voice-anchor-inner-motion"]
+        },
+        {
+          "master_id": "gene-bertoncini",
+          "exemplar_principle_ids": ["open-string-as-orchestrational-resource"]
+        }
+      ],
+      "diagnostic_examples": []
+    },
+    {
+      "id": "comping",
+      "name": "Comping (Accompaniment)",
+      "description": "Rhythm-section idiom where the guitarist plays harmony in support of a separate melody player (singer, horn, lead guitarist, pianist). The comping player's role is to outline the harmony rhythmically and provide forward motion without competing with the melody. Most exemplified in small-group jazz comping traditions (Bernstein, Baker, Warnock pedagogy, walking-bass-and-chords tradition).",
+      "characteristic_voicing_density": "moderate",
+      "characteristic_rhythmic_role": "off-beat or continuous-pattern chord stabs in support of a melody player elsewhere; voicings often shells (R-3-7) dressed with extensions; rhythmic independence from the melody is the defining feature",
+      "compatible_styles": ["bebop", "hard-bop", "bossa-nova", "cool-jazz", "standards"],
+      "prescriptive_lessons": [
+        {
+          "chord_quality": "dom7",
+          "function_role": "dominant-supporting-melody",
+          "narrative": "[placeholder] In comping, V7 voicings stay small (3-4 notes max) so they don't crowd the melody. The R-3-7 shell with an added b9 or 13 on top is the workhorse; rhythm is anticipated on the upbeat of 4 of the preceding bar. Backfill via #419 (mickey-baker run is queued as the comping exemplar).",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        },
+        {
+          "chord_quality": "maj7",
+          "function_role": "tonic-with-rhythmic-support",
+          "narrative": "[placeholder] Comping maj7 is voiced as a shell (R-3-7) or guide-tone pair (3-7) so the singer/horn has room. The 9 or 6/9 is added when the melody allows. Backfill via #419.",
+          "provenance": "placeholder",
+          "source": "placeholder"
+        }
+      ],
+      "divergence_notes": [
+        {
+          "vs_idiom": "chord-melody",
+          "shared_dimensions": ["voicing vocabulary", "voice-leading principles"],
+          "diverging_dimensions": ["who-carries-melody", "voicing-density-relative-to-melody", "rhythmic-independence"],
+          "characteristic_quote": "[placeholder] A comping player would say: 'You're playing chord-melody density behind a horn solo — drop the top voice and let the horn live up there.' Backfilled via curator pass after #419.",
+          "provenance": "placeholder"
+        }
+      ],
+      "example_masters": [
+        {
+          "master_id": "peter-bernstein",
+          "exemplar_principle_ids": ["dressing-the-notes-comping-aesthetic"]
+        },
+        {
+          "master_id": "mickey-baker",
+          "exemplar_principle_ids": ["numbered-finite-vocabulary-with-transposition-mandate", "four-named-substitution-principles-as-lattice"]
+        }
+      ],
+      "diagnostic_examples": []
+    }
+  ]
+}
