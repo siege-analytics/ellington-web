@@ -166,3 +166,232 @@ class CritiqueShapeTests(TestCase):
         c.refresh_from_db()
         self.assertEqual(c.detected_axes["style"]["slug"], "cool-jazz")
         self.assertAlmostEqual(c.detected_axes["idiom"]["confidence"], 0.74)
+"""Comparator + style-distance tests.
+
+Covers: symmetry of shared/diverging tags, characteristic_quote
+extraction (asymmetric), signature alignment verdicts, end-to-end
+critique against a hard-coded passage including the bossa/gypsy/bebop
+triangle from the product brief.
+"""
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+
+from apps.styles.comparator import (
+    DetectedVoicing,
+    critique_passage,
+    persist_critique,
+    style_distance,
+)
+from apps.styles.models import (
+    Critique,
+    Style,
+    StylePreset,
+    StyleSelection,
+)
+
+
+User = get_user_model()
+
+
+def _make_style(slug, *, tags=None, rhythmic=None, harmonic=None, notes=None, placeholder=True):
+    return Style.objects.create(
+        slug=slug,
+        name=slug.title(),
+        voicing_style_tag_affinity={t: 1.0 for t in (tags or [])},
+        rhythmic_signature=rhythmic or {},
+        harmonic_signature=harmonic or {},
+        divergence_notes=notes or [],
+        is_placeholder=placeholder,
+    )
+
+
+class StyleDistanceTests(TestCase):
+    def test_shared_and_diverging_tags(self):
+        bebop = _make_style("bebop", tags=["chromatic", "shell", "walking"])
+        bossa = _make_style("bossa-nova", tags=["chromatic", "anticipated-bass"])
+        dist = style_distance(bebop, bossa)
+        self.assertEqual(dist.shared_tags, frozenset({"chromatic"}))
+        # symmetric difference — order-independent
+        self.assertEqual(
+            dist.diverging_tags,
+            frozenset({"shell", "walking", "anticipated-bass"}),
+        )
+
+    def test_distance_is_symmetric_in_tags(self):
+        bebop = _make_style("bebop", tags=["a", "b"])
+        bossa = _make_style("bossa", tags=["b", "c"])
+        ab = style_distance(bebop, bossa)
+        ba = style_distance(bossa, bebop)
+        self.assertEqual(ab.shared_tags, ba.shared_tags)
+        self.assertEqual(ab.diverging_tags, ba.diverging_tags)
+
+    def test_characteristic_quote_is_asymmetric(self):
+        bebop = _make_style(
+            "bebop",
+            tags=["shell"],
+            notes=[
+                {
+                    "vs_style": "bossa-nova",
+                    "shared_dimensions": ["chromatic"],
+                    "diverging_dimensions": ["onset_anticipation"],
+                    "characteristic_quote": "you're using bebop chords in bossa nova rhythm",
+                },
+            ],
+        )
+        bossa = _make_style("bossa-nova", tags=["shell"])
+        # When the target is bossa and the user played bebop, the quote
+        # comes from BEBOP against BOSSA.
+        d_a_to_b = style_distance(bossa, bebop)
+        self.assertEqual(
+            d_a_to_b.characteristic_quote_from_b,
+            "you're using bebop chords in bossa nova rhythm",
+        )
+        # The reverse direction has no authored quote — None.
+        d_b_to_a = style_distance(bebop, bossa)
+        self.assertIsNone(d_b_to_a.characteristic_quote_from_b)
+
+    def test_signature_alignment_verdicts(self):
+        a = _make_style(
+            "a",
+            rhythmic={"onset_anticipation": "anticipated", "density": "medium"},
+            harmonic={"chromatic_motion_tolerance": "high"},
+        )
+        b = _make_style(
+            "b",
+            rhythmic={"onset_anticipation": "anticipated", "density": "dense"},
+            harmonic={},  # unknown
+        )
+        dist = style_distance(a, b)
+        self.assertEqual(dist.signature_alignment["onset_anticipation"], "aligned")
+        self.assertEqual(dist.signature_alignment["density"], "divergent")
+        self.assertEqual(dist.signature_alignment["chromatic_motion_tolerance"], "unknown")
+
+    def test_placeholder_flag_propagates(self):
+        a = _make_style("a", placeholder=True)
+        b = _make_style("b", placeholder=False)
+        dist = style_distance(a, b)
+        self.assertTrue(dist.placeholder_flag)
+
+
+class CritiquePassageTests(TestCase):
+    """End-to-end critique covering the bossa/gypsy/bebop product example."""
+
+    def setUp(self):
+        self.user = User.objects.create(username="dheeraj")
+
+        # Three styles. Bossa is what the user SAID, gypsy is the backing,
+        # bebop is what they're ACTUALLY playing.
+        self.bossa = _make_style(
+            "bossa-nova",
+            tags=["anticipated-bass", "chromatic"],
+            rhythmic={"onset_anticipation": "anticipated"},
+        )
+        self.gypsy = _make_style(
+            "gypsy-jazz",
+            tags=["arpeggio", "string-sweep"],
+        )
+        self.bebop = _make_style(
+            "bebop",
+            tags=["chromatic", "shell", "walking"],
+            rhythmic={"onset_anticipation": "anticipated"},
+            notes=[
+                {
+                    "vs_style": "bossa-nova",
+                    "characteristic_quote": "you're using bebop chords in bossa nova rhythm",
+                },
+            ],
+        )
+        self.ralph_patt_style = _make_style(
+            "chromatic-cool",
+            tags=["chromatic", "cluster"],
+        )
+
+        self.target_preset = StylePreset.objects.create(
+            slug="t-bossa", display_name="Bossa target", style=self.bossa,
+        )
+        self.backing_preset = StylePreset.objects.create(
+            slug="b-gypsy", display_name="Gypsy backing", style=self.gypsy,
+        )
+        self.selection = StyleSelection.objects.create(
+            user=self.user,
+            target_preset=self.target_preset,
+            backing_preset=self.backing_preset,
+        )
+
+    def test_critique_emits_match_score_against_target(self):
+        passage = [
+            DetectedVoicing(chord_symbol="Cmaj7", voicing_style_tags=("chromatic", "shell")),
+            DetectedVoicing(chord_symbol="Am7", voicing_style_tags=("chromatic", "walking")),
+        ]
+        draft = critique_passage(passage, self.selection, candidate_styles=[
+            self.bossa, self.bebop, self.gypsy, self.ralph_patt_style,
+        ])
+        # Passage intersects bossa on 'chromatic' (1 shared); union is 4 →
+        # 0.25 match score.
+        self.assertAlmostEqual(draft.style_match_score, 0.25, places=3)
+
+    def test_critique_detects_divergent_style(self):
+        passage = [
+            DetectedVoicing(chord_symbol="Cmaj7", voicing_style_tags=("chromatic", "shell", "walking")),
+        ]
+        draft = critique_passage(passage, self.selection, candidate_styles=[
+            self.bossa, self.bebop, self.gypsy, self.ralph_patt_style,
+        ])
+        # bebop has all three tags from passage; bossa has only 'chromatic'.
+        # bebop should be the detected style.
+        self.assertEqual(draft.detected_axes["style"]["slug"], "bebop")
+
+    def test_critique_renders_characteristic_quote(self):
+        passage = [
+            DetectedVoicing(chord_symbol="Cmaj7", voicing_style_tags=("chromatic", "shell", "walking")),
+        ]
+        draft = critique_passage(passage, self.selection, candidate_styles=[
+            self.bossa, self.bebop, self.gypsy, self.ralph_patt_style,
+        ])
+        commentary_blob = "\n".join(draft.commentary_items)
+        self.assertIn("characteristic-quote:from=bebop:against=bossa-nova", commentary_blob)
+        self.assertIn(
+            "you're using bebop chords in bossa nova rhythm",
+            commentary_blob,
+        )
+
+    def test_critique_emits_triangle_when_three_distinct_styles(self):
+        # User said bossa, backing is gypsy, playing is bebop. All three
+        # distinct → triangle commentary fires.
+        passage = [
+            DetectedVoicing(chord_symbol="Cmaj7", voicing_style_tags=("shell", "walking")),
+        ]
+        draft = critique_passage(passage, self.selection, candidate_styles=[
+            self.bossa, self.bebop, self.gypsy, self.ralph_patt_style,
+        ])
+        commentary_blob = "\n".join(draft.commentary_items)
+        self.assertIn("triangle:target=bossa-nova:backing=gypsy-jazz:detected=bebop", commentary_blob)
+
+    def test_placeholder_warning_set_when_any_catalog_row_placeholder(self):
+        passage = [
+            DetectedVoicing(chord_symbol="Cmaj7", voicing_style_tags=("chromatic",)),
+        ]
+        draft = critique_passage(passage, self.selection, candidate_styles=[self.bossa])
+        # All four styles in setUp() default to placeholder=True, so the
+        # selection's catalog rows have placeholder=True → flag should fire.
+        self.assertTrue(draft.placeholder_warning)
+
+    def test_critique_handles_empty_passage_gracefully(self):
+        draft = critique_passage([], self.selection, candidate_styles=[self.bossa])
+        self.assertEqual(draft.style_match_score, 0.0)
+        self.assertEqual(draft.detected_axes, {})
+
+    def test_persist_critique_writes_db_row(self):
+        passage = [
+            DetectedVoicing(chord_symbol="Cmaj7", voicing_style_tags=("chromatic", "shell")),
+        ]
+        draft = critique_passage(passage, self.selection, candidate_styles=[
+            self.bossa, self.bebop,
+        ])
+        critique = persist_critique(draft, audio_input_ref="audio:test:1")
+        critique.refresh_from_db()
+        self.assertEqual(critique.selection_id, self.selection.pk)
+        self.assertEqual(critique.audio_input_ref, "audio:test:1")
+        self.assertGreater(len(critique.commentary), 0)
+        self.assertEqual(Critique.objects.count(), 1)
