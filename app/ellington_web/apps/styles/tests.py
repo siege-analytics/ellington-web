@@ -395,3 +395,101 @@ class CritiquePassageTests(TestCase):
         self.assertEqual(critique.audio_input_ref, "audio:test:1")
         self.assertGreater(len(critique.commentary), 0)
         self.assertEqual(Critique.objects.count(), 1)
+
+
+# ---------------------------------------------------------------------------
+# Seed catalog tests
+# ---------------------------------------------------------------------------
+
+
+from io import StringIO
+from django.core.management import call_command
+
+
+class SeedStyleCatalogCommandTests(TestCase):
+    def test_seeds_8_styles_and_4_idioms(self):
+        call_command("seed_style_catalog", stdout=StringIO())
+        self.assertEqual(Style.objects.count(), 8)
+        self.assertEqual(Idiom.objects.count(), 4)
+
+    def test_seeded_rows_are_placeholder(self):
+        call_command("seed_style_catalog", stdout=StringIO())
+        self.assertTrue(all(s.is_placeholder for s in Style.objects.all()))
+        self.assertTrue(all(i.is_placeholder for i in Idiom.objects.all()))
+
+    def test_idempotent_re_run(self):
+        call_command("seed_style_catalog", stdout=StringIO())
+        call_command("seed_style_catalog", stdout=StringIO())
+        self.assertEqual(Style.objects.count(), 8)
+        self.assertEqual(Idiom.objects.count(), 4)
+
+    def test_real_catalog_rows_are_preserved_on_reseed(self):
+        # Simulate sub-E's catalog-sync replacing one row with real content
+        call_command("seed_style_catalog", stdout=StringIO())
+        bebop = Style.objects.get(slug="bebop")
+        bebop.is_placeholder = False
+        bebop.description = "REAL CONTENT FROM PLUGIN AGENT'S DISTILLATION"
+        bebop.save()
+
+        # Re-run seed — bebop should NOT be touched
+        out = StringIO()
+        call_command("seed_style_catalog", stdout=out)
+        bebop.refresh_from_db()
+        self.assertFalse(bebop.is_placeholder)
+        self.assertEqual(
+            bebop.description, "REAL CONTENT FROM PLUGIN AGENT'S DISTILLATION",
+        )
+        self.assertIn("skip bebop", out.getvalue())
+
+    def test_force_overwrite_clobbers_real_rows(self):
+        call_command("seed_style_catalog", stdout=StringIO())
+        bebop = Style.objects.get(slug="bebop")
+        bebop.is_placeholder = False
+        bebop.description = "REAL CONTENT"
+        bebop.save()
+
+        # With --force-overwrite, even real rows are clobbered back to placeholder
+        call_command("seed_style_catalog", "--force-overwrite", stdout=StringIO())
+        bebop.refresh_from_db()
+        self.assertTrue(bebop.is_placeholder)
+        self.assertNotIn("REAL CONTENT", bebop.description)
+
+    def test_seeded_bebop_has_divergence_notes_against_bossa(self):
+        call_command("seed_style_catalog", stdout=StringIO())
+        bebop = Style.objects.get(slug="bebop")
+        notes = bebop.divergence_notes
+        bossa_note = next((n for n in notes if n["vs_style"] == "bossa-nova"), None)
+        self.assertIsNotNone(bossa_note)
+        self.assertIn("bebop chords in bossa nova rhythm", bossa_note["characteristic_quote"])
+
+    def test_comparator_runs_against_seeded_data(self):
+        """The whole point of the seed: the comparator should produce a
+        non-trivial CritiqueDraft against the seeded catalog WITHOUT real
+        plugin content.
+        """
+        from apps.styles.comparator import DetectedVoicing, critique_passage
+
+        call_command("seed_style_catalog", stdout=StringIO())
+
+        user = User.objects.create(username="seed-test")
+        bossa = Style.objects.get(slug="bossa-nova")
+        gypsy = Style.objects.get(slug="gypsy-jazz")
+        target = StylePreset.objects.create(slug="t-seed", display_name="t", style=bossa)
+        backing = StylePreset.objects.create(slug="b-seed", display_name="b", style=gypsy)
+        sel = StyleSelection.objects.create(
+            user=user, target_preset=target, backing_preset=backing,
+        )
+
+        # Passage uses shell + walking + chromatic — bebop's affinity tags
+        passage = [
+            DetectedVoicing(
+                chord_symbol="Cmaj7",
+                voicing_style_tags=("shell", "walking-bass", "chromatic"),
+            ),
+        ]
+        draft = critique_passage(passage, sel)
+        # Comparator should detect bebop and pull the characteristic quote
+        self.assertEqual(draft.detected_axes["style"]["slug"], "bebop")
+        commentary = "\n".join(draft.commentary_items)
+        self.assertIn("bebop chords in bossa nova rhythm", commentary)
+        self.assertIn("triangle:target=bossa-nova:backing=gypsy-jazz:detected=bebop", commentary)
