@@ -493,3 +493,122 @@ class SeedStyleCatalogCommandTests(TestCase):
         commentary = "\n".join(draft.commentary_items)
         self.assertIn("bebop chords in bossa nova rhythm", commentary)
         self.assertIn("triangle:target=bossa-nova:backing=gypsy-jazz:detected=bebop", commentary)
+
+
+# ---------------------------------------------------------------------------
+# Smoke view tests — /critique/preview/
+# ---------------------------------------------------------------------------
+
+
+import json
+
+from django.urls import reverse  # noqa: F401 — kept for future named-URL tests
+from django.test import Client
+
+
+class CritiquePreviewViewTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        call_command("seed_style_catalog", stdout=StringIO())
+        user = User.objects.create(username="view-test")
+        bossa = Style.objects.get(slug="bossa-nova")
+        gypsy = Style.objects.get(slug="gypsy-jazz")
+        self.target = StylePreset.objects.create(
+            slug="vt-target", display_name="t", style=bossa,
+        )
+        self.backing = StylePreset.objects.create(
+            slug="vt-backing", display_name="b", style=gypsy,
+        )
+        self.selection = StyleSelection.objects.create(
+            user=user, target_preset=self.target, backing_preset=self.backing,
+        )
+
+    def test_get_without_demo_returns_400(self):
+        response = self.client.get("/critique/preview/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("demo=1", response.json()["error"])
+
+    def test_get_demo_runs_canned_passage(self):
+        response = self.client.get("/critique/preview/?demo=1")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["demo"])
+        self.assertIn("demo_explanation", body)
+        # Canned demo plays bebop → comparator detects bebop
+        self.assertEqual(body["detected_axes"]["style"]["slug"], "bebop")
+        commentary = "\n".join(body["commentary_items"])
+        self.assertIn("triangle:target=bossa-nova", commentary)
+        self.assertIn("bebop chords in bossa nova rhythm", commentary)
+
+    def test_post_with_valid_body_returns_critique(self):
+        body = {
+            "selection_id": self.selection.pk,
+            "voicings": [
+                {
+                    "chord_symbol": "Cmaj7",
+                    "voicing_style_tags": ["shell", "chromatic"],
+                },
+                {
+                    "chord_symbol": "Am7",
+                    "voicing_style_tags": ["walking-bass", "chromatic"],
+                },
+            ],
+        }
+        response = self.client.post(
+            "/critique/preview/", data=json.dumps(body), content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body_out = response.json()
+        self.assertEqual(body_out["selection_id"], self.selection.pk)
+        self.assertIn("style_match_score", body_out)
+        self.assertGreater(len(body_out["commentary_items"]), 0)
+
+    def test_post_with_persist_writes_critique_row(self):
+        body = {
+            "selection_id": self.selection.pk,
+            "voicings": [
+                {"chord_symbol": "Cmaj7", "voicing_style_tags": ["shell", "walking-bass"]},
+            ],
+            "persist": True,
+            "audio_input_ref": "test:passage:1",
+        }
+        response = self.client.post(
+            "/critique/preview/", data=json.dumps(body), content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body_out = response.json()
+        self.assertIn("persisted_critique_id", body_out)
+        critique = Critique.objects.get(pk=body_out["persisted_critique_id"])
+        self.assertEqual(critique.audio_input_ref, "test:passage:1")
+
+    def test_post_with_missing_selection_id_returns_400(self):
+        response = self.client.post(
+            "/critique/preview/",
+            data=json.dumps({"voicings": [{"chord_symbol": "C"}]}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_with_missing_voicings_returns_400(self):
+        response = self.client.post(
+            "/critique/preview/",
+            data=json.dumps({"selection_id": self.selection.pk, "voicings": []}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_with_invalid_json_returns_400(self):
+        response = self.client.post(
+            "/critique/preview/", data="not json", content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_with_unknown_selection_returns_404(self):
+        body = {
+            "selection_id": 999999,
+            "voicings": [{"chord_symbol": "C", "voicing_style_tags": ["a"]}],
+        }
+        response = self.client.post(
+            "/critique/preview/", data=json.dumps(body), content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
