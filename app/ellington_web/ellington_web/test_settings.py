@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.styles",
     "apps.charts",
+    "apps.practice",
 ]
 
 MIDDLEWARE = [
