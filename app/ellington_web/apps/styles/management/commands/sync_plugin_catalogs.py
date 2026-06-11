@@ -49,7 +49,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from apps.styles.models import Idiom, Master, Style
+from apps.styles.models import Idiom, Master, Style, StylePreset
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +238,7 @@ class Command(BaseCommand):
             if not slug:
                 continue
             plain, extra = _split_entry(entry, MAPPED_MASTER_FIELDS)
-            Master.objects.update_or_create(
+            master, _master_created = Master.objects.update_or_create(
                 slug=slug,
                 defaults={
                     "name": plain.get("name") or slug,
@@ -246,6 +246,19 @@ class Command(BaseCommand):
                     "extra": extra,
                     "is_placeholder": False,
                     "schema_version": "v1",
+                },
+            )
+            # Per coordination with the plugin agent (Ellington-side issue
+            # #54): every imported Master gets a default StylePreset whose
+            # slug == master.slug, so the master is immediately discoverable
+            # in user-facing pickers. Curated bespoke presets (different
+            # slug — e.g. "joe-pass-bebop-comping") are untouched; their
+            # uniqueness on slug is what protects them.
+            StylePreset.objects.update_or_create(
+                slug=master.slug,
+                defaults={
+                    "display_name": master.name,
+                    "master": master,
                 },
             )
             count += 1

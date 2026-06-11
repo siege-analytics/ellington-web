@@ -791,3 +791,104 @@ class SyncPluginCatalogsCommandTests(TestCase):
         # is_placeholder=False even though their narrative is "placeholder"
         # provenance per the plugin's annotation
         self.assertFalse(draft.placeholder_warning)
+
+
+class SyncPluginCatalogsAutoPresetTests(TestCase):
+    """sync_plugin_catalogs auto-creates a default StylePreset per
+    imported Master (Ellington-side issue #54 — structural handling of
+    plugin's Stage B mirror PRs).
+    """
+
+    def test_master_import_creates_matching_style_preset(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "styles.json").write_text(json.dumps({"schemaVersion": "v1", "styles": []}))
+            (tmp_path / "idioms.json").write_text(json.dumps({"schemaVersion": "v1", "idioms": []}))
+            (tmp_path / "masters.json").write_text(json.dumps({
+                "masters": {
+                    "dirk-laukens": {"name": "Dirk Laukens"},
+                    "joe-pass": {"name": "Joe Pass"},
+                }
+            }))
+            call_command("sync_plugin_catalogs", "--plugin-data-dir", tmp, stdout=StringIO())
+
+        # Both masters got matching presets
+        self.assertTrue(StylePreset.objects.filter(slug="dirk-laukens").exists())
+        self.assertTrue(StylePreset.objects.filter(slug="joe-pass").exists())
+        # Preset's master FK actually points at the right master
+        laukens_preset = StylePreset.objects.get(slug="dirk-laukens")
+        self.assertEqual(laukens_preset.master.slug, "dirk-laukens")
+        self.assertEqual(laukens_preset.display_name, "Dirk Laukens")
+        # Auto-created preset has no style/idiom — those are explicit curation
+        self.assertIsNone(laukens_preset.style_id)
+        self.assertIsNone(laukens_preset.idiom_id)
+
+    def test_idempotent_re_run_no_preset_duplication(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "styles.json").write_text(json.dumps({"schemaVersion": "v1", "styles": []}))
+            (tmp_path / "idioms.json").write_text(json.dumps({"schemaVersion": "v1", "idioms": []}))
+            (tmp_path / "masters.json").write_text(json.dumps({
+                "masters": {"dirk-laukens": {"name": "Dirk Laukens"}}
+            }))
+            for _ in range(3):
+                call_command("sync_plugin_catalogs", "--plugin-data-dir", tmp, stdout=StringIO())
+        self.assertEqual(StylePreset.objects.filter(slug="dirk-laukens").count(), 1)
+
+    def test_master_rename_updates_preset_display_name(self):
+        """If plugin agent renames a master between two imports, the
+        auto-preset's display_name should track. Slug stays as the
+        join key.
+        """
+        import tempfile
+        master = Master.objects.create(slug="laukens", name="Laukens", is_placeholder=False)
+        StylePreset.objects.update_or_create(
+            slug="laukens",
+            defaults={"display_name": "Laukens (old name)", "master": master},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "styles.json").write_text(json.dumps({"schemaVersion": "v1", "styles": []}))
+            (tmp_path / "idioms.json").write_text(json.dumps({"schemaVersion": "v1", "idioms": []}))
+            (tmp_path / "masters.json").write_text(json.dumps({
+                "masters": {"laukens": {"name": "Dirk Laukens"}}
+            }))
+            call_command("sync_plugin_catalogs", "--plugin-data-dir", tmp, stdout=StringIO())
+        preset = StylePreset.objects.get(slug="laukens")
+        self.assertEqual(preset.display_name, "Dirk Laukens")
+
+    def test_curated_bespoke_presets_with_different_slug_survive(self):
+        """A user-curated preset like 'joe-pass-bebop-comping' (different
+        slug than the master's own) MUST be preserved by sub-E's sync.
+        It uses the master FK but its own slug; auto-preset upsert is
+        keyed on master.slug == preset.slug, so curated rows are
+        untouched.
+        """
+        # Pre-populate: a curated preset that combines a master + an idiom
+        master = Master.objects.create(slug="joe-pass", name="Joe Pass", is_placeholder=False)
+        cm = Idiom.objects.create(slug="chord-melody", name="Chord Melody")
+        curated = StylePreset.objects.create(
+            slug="joe-pass-chord-melody",
+            display_name="Joe Pass × Chord Melody",
+            master=master,
+            idiom=cm,
+        )
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "styles.json").write_text(json.dumps({"schemaVersion": "v1", "styles": []}))
+            (tmp_path / "idioms.json").write_text(json.dumps({"schemaVersion": "v1", "idioms": []}))
+            (tmp_path / "masters.json").write_text(json.dumps({
+                "masters": {"joe-pass": {"name": "Joe Pass"}}
+            }))
+            call_command("sync_plugin_catalogs", "--plugin-data-dir", tmp, stdout=StringIO())
+
+        # The auto-preset (slug = master.slug) was added
+        self.assertTrue(StylePreset.objects.filter(slug="joe-pass").exists())
+        # The curated preset (different slug) survived UNTOUCHED
+        curated.refresh_from_db()
+        self.assertEqual(curated.display_name, "Joe Pass × Chord Melody")
+        self.assertEqual(curated.idiom, cm)
+        self.assertEqual(curated.master, master)
