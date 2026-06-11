@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "locations",
     "apps.core",
     "apps.styles",
+    "apps.charts",
 ]
 
 MIDDLEWARE = [
