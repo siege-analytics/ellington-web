@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "apps.core",
     "apps.styles",
+    "apps.charts",
 ]
 
 MIDDLEWARE = [
