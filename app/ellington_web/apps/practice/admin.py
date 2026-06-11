@@ -1,0 +1,114 @@
+from django.contrib import admin
+
+from .models import (
+    AudioStem,
+    BackingTrack,
+    ChordDetection,
+    PracticeSegment,
+    PracticeSession,
+    Recording,
+)
+
+
+@admin.register(BackingTrack)
+class BackingTrackAdmin(admin.ModelAdmin):
+    list_display = ("slug", "title", "source", "style", "idiom", "song", "tempo_bpm", "key")
+    list_filter = ("source", "style", "idiom")
+    search_fields = ("slug", "title", "audio_ref")
+    readonly_fields = ("created_at", "updated_at")
+    prepopulated_fields = {"slug": ("title",)}
+    raw_id_fields = ("style", "idiom", "song")
+
+
+class RecordingInline(admin.TabularInline):
+    model = Recording
+    extra = 0
+    fields = ("file_ref", "duration_ms", "sample_rate_hz", "started_at")
+    readonly_fields = ("started_at",)
+    show_change_link = True
+
+
+class SegmentInline(admin.TabularInline):
+    model = PracticeSegment
+    extra = 0
+    fields = ("start_ms", "end_ms", "recording", "critique", "label")
+    raw_id_fields = ("recording", "critique")
+    show_change_link = True
+
+
+@admin.register(PracticeSession)
+class PracticeSessionAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "target_preset",
+        "backing_track",
+        "song",
+        "status",
+        "started_at",
+        "ended_at",
+    )
+    list_filter = ("status", "started_at", "target_preset", "backing_track")
+    search_fields = (
+        "user__username",
+        "target_preset__slug",
+        "backing_track__slug",
+        "song__slug",
+    )
+    readonly_fields = ("started_at",)
+    raw_id_fields = ("user", "target_preset", "backing_track", "song")
+    inlines = [RecordingInline, SegmentInline]
+
+
+class AudioStemInline(admin.TabularInline):
+    model = AudioStem
+    extra = 0
+    fields = ("stem_type", "file_ref", "separation_model_ref")
+
+
+class ChordDetectionInline(admin.TabularInline):
+    model = ChordDetection
+    extra = 0
+    fields = (
+        "beat_timestamp_ms",
+        "detected_chord_symbol",
+        "confidence",
+        "voicing_style_tags",
+        "detection_model_ref",
+    )
+
+
+@admin.register(Recording)
+class RecordingAdmin(admin.ModelAdmin):
+    list_display = ("session", "file_ref", "duration_ms", "sample_rate_hz", "channels", "started_at")
+    list_filter = ("session__user", "started_at")
+    search_fields = ("file_ref", "session__user__username")
+    readonly_fields = ("started_at",)
+    raw_id_fields = ("session",)
+    inlines = [AudioStemInline, ChordDetectionInline]
+
+
+@admin.register(AudioStem)
+class AudioStemAdmin(admin.ModelAdmin):
+    list_display = ("recording", "stem_type", "file_ref", "separation_model_ref", "created_at")
+    list_filter = ("stem_type", "separation_model_ref")
+    raw_id_fields = ("recording",)
+
+
+@admin.register(ChordDetection)
+class ChordDetectionAdmin(admin.ModelAdmin):
+    list_display = (
+        "recording",
+        "beat_timestamp_ms",
+        "detected_chord_symbol",
+        "confidence",
+        "detection_model_ref",
+    )
+    list_filter = ("detection_model_ref",)
+    search_fields = ("detected_chord_symbol",)
+    raw_id_fields = ("recording",)
+
+
+@admin.register(PracticeSegment)
+class PracticeSegmentAdmin(admin.ModelAdmin):
+    list_display = ("session", "start_ms", "end_ms", "recording", "critique", "label")
+    raw_id_fields = ("session", "recording", "critique")
