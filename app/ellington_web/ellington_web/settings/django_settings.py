@@ -98,6 +98,7 @@ TEMPLATES = [
             'context_processors': [
                 'django.template.context_processors.debug',
                 'django.template.context_processors.request',
+                'django.template.context_processors.media',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
@@ -161,6 +162,21 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Media files (user uploads — practice-flow Recordings, etc.). MEDIA_ROOT
+# in production points at a PVC mount in the pod; local dev defaults to
+# ``./media/`` under BASE_DIR so a fresh checkout doesn't crash.
+# ``MEDIA_URL`` is served by Daphne in dev and by the deployment's static
+# server in production (separate from STATIC_URL because user uploads are
+# never bundled with the application image).
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.environ.get("MEDIA_ROOT", str(BASE_DIR / "media"))
+
+# After login, redirect users to the practice session list. They can
+# navigate elsewhere from there. Used by ``@login_required`` and the
+# auth login view.
+LOGIN_REDIRECT_URL = "/practice/sessions/"
+LOGIN_URL = "/accounts/login/"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field

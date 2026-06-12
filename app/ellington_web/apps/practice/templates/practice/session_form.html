@@ -1,0 +1,33 @@
+{% extends "practice/base.html" %}
+{% block title %}New practice session — Ellington{% endblock %}
+{% block content %}
+  <h1>New practice session</h1>
+  <p>Pick a song, set a target style, drop in your recording.</p>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <ul class="errorlist">
+        {% for err in form.non_field_errors %}<li>{{ err }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+
+    {% for field in form %}
+      <p>
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<small class="helptext">{{ field.help_text }}</small>{% endif %}
+        {% if field.errors %}
+          <ul class="errorlist">
+            {% for err in field.errors %}<li>{{ err }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+      </p>
+    {% endfor %}
+
+    <p>
+      <input type="submit" value="Create session">
+      <a href="{% url 'practice:session_list' %}" style="margin-left:1em">Cancel</a>
+    </p>
+  </form>
+{% endblock %}

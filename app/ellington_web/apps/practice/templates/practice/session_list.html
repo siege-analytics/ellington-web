@@ -1,0 +1,42 @@
+{% extends "practice/base.html" %}
+{% block title %}My practice sessions — Ellington{% endblock %}
+{% block content %}
+  <h1>My practice sessions</h1>
+
+  {% if sessions %}
+    <table>
+      <thead>
+        <tr>
+          <th>Started</th>
+          <th>Song</th>
+          <th>Target style</th>
+          <th>Recordings</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for session in sessions %}
+          <tr>
+            <td>{{ session.started_at|date:"Y-m-d H:i" }}</td>
+            <td>
+              {% if session.song %}{{ session.song.title }}
+              {% else %}<em>—</em>{% endif %}
+            </td>
+            <td>{{ session.target_preset.display_name }}</td>
+            <td>{{ session.recordings.count }}</td>
+            <td>{{ session.get_status_display }}</td>
+            <td>
+              <a href="{% url 'practice:session_detail' session.id %}">view</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      <p>No practice sessions yet.</p>
+      <p><a href="{% url 'practice:session_new' %}">+ Create your first session</a></p>
+    </div>
+  {% endif %}
+{% endblock %}
