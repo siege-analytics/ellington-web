@@ -15,6 +15,8 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 
@@ -28,3 +30,9 @@ urlpatterns = [
     path("critique/", include("apps.styles.urls")),
     path("practice/", include("apps.practice.urls")),
 ]
+
+# In dev, Daphne serves user-uploaded recordings from MEDIA_ROOT. In
+# production this URL is fronted by the deployment's static file server
+# (Nginx/CDN), so the helper is a no-op when DEBUG=False.
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
