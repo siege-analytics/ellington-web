@@ -26,6 +26,7 @@ from apps.charts.models import ChordEvent, Measure, Section
 
 from .forms import PracticeSessionForm
 from .models import PracticeSession, Recording
+from .tasks import dispatch_analysis
 
 
 @login_required
@@ -63,10 +64,29 @@ def session_new(request: HttpRequest) -> HttpResponse:
         )
         if form.is_valid():
             session = form.save(user=request.user)
-            messages.success(
-                request,
-                f"created session {session.id} — recording uploaded",
-            )
+            # Auto-fire audio analysis on the just-created Recording.
+            # If broker is down, dispatch_analysis returns None and the
+            # user can manually re-fire from session_detail.
+            first_recording = session.recordings.first()
+            if first_recording is not None:
+                task_id = dispatch_analysis(first_recording)
+                if task_id:
+                    messages.success(
+                        request,
+                        f"created session {session.id} — recording uploaded; "
+                        f"analysis queued (task {task_id[:12]}...)",
+                    )
+                else:
+                    messages.warning(
+                        request,
+                        f"created session {session.id} — recording uploaded; "
+                        "analysis queue unavailable, use Re-analyze to retry",
+                    )
+            else:
+                messages.success(
+                    request,
+                    f"created session {session.id} — recording uploaded",
+                )
             return redirect("practice:session_detail", pk=session.id)
     else:
         form = PracticeSessionForm(initial_song_id=initial_song_id_int)
@@ -144,6 +164,35 @@ def session_detail(request: HttpRequest, pk: int) -> HttpResponse:
 
 @login_required
 @require_POST
+def recording_reanalyze(request: HttpRequest, recording_pk: int) -> HttpResponseRedirect:
+    """Manually re-fire analyze_recording on an existing Recording.
+
+    Used when:
+      - Auto-fire failed at create time (broker was down)
+      - User wants to re-run analysis after the algorithm changes
+        (e.g. Phase 3b's real detector lands)
+    """
+    recording = get_object_or_404(
+        Recording.objects.select_related("session"),
+        pk=recording_pk,
+        session__user=request.user,
+    )
+    task_id = dispatch_analysis(recording)
+    if task_id:
+        messages.success(
+            request,
+            f"re-analysis queued for recording {recording_pk} (task {task_id[:12]}...)",
+        )
+    else:
+        messages.error(
+            request,
+            f"could not queue re-analysis — broker unreachable",
+        )
+    return redirect("practice:session_detail", pk=recording.session_id)
+
+
+@login_required
+@require_POST
 def session_delete(request: HttpRequest, pk: int) -> HttpResponseRedirect:
     """Destructive: delete a session. CASCADE removes recordings + segments.
 
@@ -163,4 +212,10 @@ def session_delete(request: HttpRequest, pk: int) -> HttpResponseRedirect:
     return redirect(reverse("practice:session_list"))
 
 
-__all__ = ["session_delete", "session_detail", "session_list", "session_new"]
+__all__ = [
+    "recording_reanalyze",
+    "session_delete",
+    "session_detail",
+    "session_list",
+    "session_new",
+]
