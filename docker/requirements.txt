@@ -33,3 +33,4 @@ reportlab[accel]
 reportlab[renderpm]
 reportlab[pycairo]
 scikit-learn
+pyRealParser==0.1.0
