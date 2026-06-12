@@ -64,6 +64,24 @@ class SessionStatus(models.TextChoices):
     ABANDONED = "abandoned", "Abandoned"
 
 
+class AnalysisStatus(models.TextChoices):
+    """Lifecycle of a Recording through the sub-4 audio pipeline.
+
+    ``PENDING`` — created, not yet enqueued.
+    ``QUEUED`` — Celery task ID is on Recording.analysis_task_id, worker
+    hasn't picked it up yet.
+    ``RUNNING`` — worker is currently analyzing.
+    ``COMPLETE`` — ChordDetection rows are populated; comparator can run.
+    ``FAILED`` — worker raised; details in Recording.notes.
+    """
+
+    PENDING = "pending", "Pending"
+    QUEUED = "queued", "Queued"
+    RUNNING = "running", "Running"
+    COMPLETE = "complete", "Complete"
+    FAILED = "failed", "Failed"
+
+
 # ---------------------------------------------------------------------------
 # Backing track (the rhythm-section context the user plays against)
 # ---------------------------------------------------------------------------
@@ -204,6 +222,23 @@ class Recording(models.Model):
     channels = models.PositiveSmallIntegerField(null=True, blank=True)
     started_at = models.DateTimeField(auto_now_add=True)
     notes = models.TextField(blank=True)
+
+    # sub-4 audio pipeline lifecycle. PENDING on create; views auto-fire
+    # the analyze_recording task which advances it through QUEUED ->
+    # RUNNING -> COMPLETE (or FAILED). Manual re-analyze fires from
+    # COMPLETE -> QUEUED again.
+    analysis_status = models.CharField(
+        max_length=16,
+        choices=AnalysisStatus.choices,
+        default=AnalysisStatus.PENDING,
+        db_index=True,
+    )
+    analysis_task_id = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Celery task ID of the most-recent analyze_recording dispatch.",
+    )
+    analysis_completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-started_at"]
