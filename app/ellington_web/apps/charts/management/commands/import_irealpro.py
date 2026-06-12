@@ -69,10 +69,14 @@ class Command(BaseCommand):
         import_source = options["import_source"]
         dry_run = options["dry_run"]
 
-        # Decide between file-path and URI
+        # Decide between file-path and URI. Catch broadly: OSError covers
+        # permission denied, IsADirectoryError, FileNotFoundError; ValueError
+        # covers parser-side bad input; UnicodeDecodeError covers non-UTF-8
+        # files. All convert to a clean CommandError rather than a raw
+        # traceback the operator has to dig through.
         try:
             parsed = self._parse_input(source)
-        except (FileNotFoundError, ValueError) as exc:
+        except (OSError, ValueError, UnicodeDecodeError) as exc:
             raise CommandError(str(exc)) from exc
 
         if not parsed:
@@ -112,9 +116,15 @@ class Command(BaseCommand):
         if source.startswith("irealb://"):
             return parse_single_uri(source)
         path = Path(source)
-        if not path.exists():
+        if not path.exists() or not path.is_file():
             raise FileNotFoundError(
                 f"source {source!r} is not a URI and not an existing file"
             )
         # Treat as playlist HTML
-        return parse_playlist_html(path.read_text(encoding="utf-8"))
+        try:
+            html = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"source {source!r} is not valid UTF-8 HTML"
+            ) from exc
+        return parse_playlist_html(html)

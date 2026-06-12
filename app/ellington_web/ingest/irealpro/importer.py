@@ -86,12 +86,21 @@ def import_parsed_songs(
 
     # Upsert songbook outside the per-song loop. If this fails, the
     # whole import fails (we can't write songs without a songbook).
-    songbook, sb_created = Songbook.objects.update_or_create(
-        slug=songbook_slug,
-        defaults={
-            "title": songbook_title or songbook_slug,
-        },
-    )
+    #
+    # ``title`` handling: when the caller didn't specify a title, use
+    # ``get_or_create`` so we don't clobber an existing custom title with
+    # the slug. When the caller DID specify a title, ``update_or_create``
+    # is the correct call — they explicitly want the new title applied.
+    if songbook_title is None:
+        songbook, sb_created = Songbook.objects.get_or_create(
+            slug=songbook_slug,
+            defaults={"title": songbook_slug},
+        )
+    else:
+        songbook, sb_created = Songbook.objects.update_or_create(
+            slug=songbook_slug,
+            defaults={"title": songbook_title},
+        )
     _log.info(
         "songbook %s: %s",
         songbook_slug,
@@ -116,9 +125,26 @@ def _summarize_only(
     parsed: list[ParsedSong],
     summary: ImportSummary,
 ) -> ImportSummary:
-    """Compute what would have been written without writing."""
-    summary.songs_created = len(parsed)  # dry-run: assume all-new
+    """Compute what would have been written without writing.
+
+    Distinguishes created from updated by checking which song slugs
+    already exist in the target songbook. This matches the behavior
+    of the real import path: a song that already exists under the same
+    slug gets updated rather than created.
+    """
+    existing_slugs: set[str] = set()
+    songbook = Songbook.objects.filter(slug=summary.songbook_slug).first()
+    if songbook is not None:
+        existing_slugs = set(
+            Song.objects.filter(songbook=songbook).values_list("slug", flat=True)
+        )
+
     for ps in parsed:
+        ps_slug = _slug_for_song(ps.title, summary.songbook_slug)
+        if ps_slug in existing_slugs:
+            summary.songs_updated += 1
+        else:
+            summary.songs_created += 1
         for section in ps.sections:
             summary.sections_written += 1
             for measure in section.measures:

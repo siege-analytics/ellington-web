@@ -83,6 +83,14 @@ class TestNormalizeChordSymbol(SimpleTestCase):
         self.assertEqual(out.canonical, "Dm7")
         self.assertEqual(out.bass, "Bb")
 
+    def test_slash_chord_with_trailing_garbage_rejected(self) -> None:
+        # ``Cmaj7/Gfoo`` is not a valid slash chord — the bass token must
+        # be a complete root + optional accidental. fullmatch rejects;
+        # the returned NormalizedChord carries a warning.
+        out = normalize_chord_symbol("Cmaj7/Gfoo")
+        self.assertIsNotNone(out.warning)
+        self.assertIsNone(out.bass)
+
     def test_empty_input_yields_warning(self) -> None:
         out = normalize_chord_symbol("")
         self.assertEqual(out.canonical, "")

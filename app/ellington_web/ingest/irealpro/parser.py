@@ -300,6 +300,40 @@ def _build_sections(
             f"section bar-count sum ({cursor}) != measures_as_strings ({total_measures}); "
             f"some bars may be misassigned. layout={section_layout}"
         )
+        if cursor < total_measures:
+            # Trailing bars that weren't accounted for by chord_string's
+            # section layout. Don't drop them — append to the last section
+            # (preferred) or create a synthetic catch-all section if no
+            # sections exist yet. This keeps the ground-truth timeline
+            # complete for sub-4 alignment even when section labels are
+            # unreliable.
+            overflow_measures = _build_measures(
+                measures_as_strings[cursor:],
+                beats_per_measure,
+                warnings,
+            )
+            if sections:
+                last = sections[-1]
+                renumbered = tuple(
+                    ParsedMeasure(
+                        number_in_section=len(last.measures) + i,
+                        chord_events=m.chord_events,
+                    )
+                    for i, m in enumerate(overflow_measures, start=1)
+                )
+                sections[-1] = ParsedSection(
+                    label=last.label,
+                    order_index=last.order_index,
+                    measures=tuple(last.measures) + renumbered,
+                )
+            else:
+                sections.append(
+                    ParsedSection(
+                        label="",
+                        order_index=0,
+                        measures=tuple(overflow_measures),
+                    )
+                )
 
     return sections, warnings
 

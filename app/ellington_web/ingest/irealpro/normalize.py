@@ -152,7 +152,11 @@ def normalize_chord_symbol(raw: str) -> NormalizedChord:
     if "/" in raw:
         chord_part, _, bass_part = raw.partition("/")
         bass_part = bass_part.strip()
-        if bass_part and _ROOT_RE.match(bass_part):
+        # Use fullmatch so trailing garbage (e.g. ``Cmaj7/Gfoo``) is
+        # rejected rather than silently accepted as bass='G'. The bass
+        # token must be a complete root + optional accidental, nothing
+        # more.
+        if bass_part and _ROOT_RE.fullmatch(bass_part):
             bass = bass_part
         else:
             # Malformed slash bass — keep going but warn
