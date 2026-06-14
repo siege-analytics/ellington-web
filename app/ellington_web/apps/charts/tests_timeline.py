@@ -154,6 +154,33 @@ class TestMeasureToSeconds(TestCase):
         with self.assertRaises(ValueError):
             measure_to_seconds(song, 0, 1.0)
 
+    def test_beat_below_one_raises(self) -> None:
+        # Symmetric with the existing flat_measure_index < 1 raise and
+        # with seconds_to_measure's negative-clamp behavior — a beat
+        # below 1.0 is physically meaningless (downbeat = 1.0) and
+        # would produce negative seconds.
+        song = _make_song()
+        for bad_beat in (0.0, 0.5, 0.999, -1.0):
+            with self.assertRaises(
+                ValueError, msg=f"beat={bad_beat} should raise"
+            ):
+                measure_to_seconds(song, 1, bad_beat)
+
+    def test_accepts_decimal_beat(self) -> None:
+        # ChordEvent.beat is Decimal in the ORM; callers iterating
+        # events must be able to pass it through without manual cast.
+        from decimal import Decimal
+
+        song = _make_song(default_tempo_bpm=120, time_signature="4/4")
+        # Decimal('3.0') beat at measure 1 = 2 beats × 0.5 sec = 1.0
+        self.assertEqual(
+            measure_to_seconds(song, 1, Decimal("3.0")), 1.0
+        )
+
+    def test_accepts_int_beat(self) -> None:
+        song = _make_song(default_tempo_bpm=120, time_signature="4/4")
+        self.assertEqual(measure_to_seconds(song, 1, 3), 1.0)
+
 
 class TestSecondsToMeasure(TestCase):
     """seconds → (flat_measure_index, beat) — reverse of measure_to_seconds."""
@@ -175,6 +202,20 @@ class TestSecondsToMeasure(TestCase):
         # near song-start due to alignment slop — don't crash.
         song = _make_song()
         self.assertEqual(seconds_to_measure(song, -0.01), (1, 1.0))
+
+    def test_seconds_past_song_end_overshoots_silently(self) -> None:
+        # Per the function's docstring contract: past-end-of-song
+        # timestamps are NOT validated; the caller is responsible.
+        # This test pins the silent-overshoot behavior so a future
+        # change that adds validation breaks visibly.
+        song = _make_song(
+            default_tempo_bpm=120,
+            time_signature="4/4",
+            section_specs=[("A", 4)],  # 4 bars × 2 sec/bar = 8 sec total
+        )
+        # 100 seconds past the start at 120/4-4 → measure 51
+        m, b = seconds_to_measure(song, 100.0)
+        self.assertGreater(m, 4, "should overshoot past end without clamping")
 
 
 class TestFlattenChordEvents(TestCase):
