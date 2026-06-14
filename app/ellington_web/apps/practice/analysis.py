@@ -22,7 +22,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from apps.charts.models import Song
+from django.db.models import Prefetch
+
+from apps.charts.models import ChordEvent, Measure, Song
 
 from .models import ChordDetection, Recording
 
@@ -107,14 +109,33 @@ def analyze_recording_placeholder(recording: Recording) -> AnalysisOutcome:
     bpm_count = _beats_per_measure(song)
     seconds_per_beat = 60.0 / tempo
 
+    # Prefetch the whole section→measure→chord_event tree with sort
+    # orders applied at the queryset level. Inner ``.order_by()`` on a
+    # related-manager iterator invalidates ``prefetch_related`` and
+    # re-issues SELECTs per section + per measure — worse here than in
+    # views because the worker runs unattended.
+    prefetched_sections = (
+        song.sections.order_by("order_index").prefetch_related(
+            Prefetch(
+                "measures",
+                queryset=Measure.objects.order_by(
+                    "number_in_section"
+                ).prefetch_related(
+                    Prefetch(
+                        "chord_events",
+                        queryset=ChordEvent.objects.order_by("beat"),
+                    )
+                ),
+            )
+        )
+    )
+
     detections: list[ChordDetection] = []
     flat_measure_index = 0
-    for section in song.sections.order_by("order_index").prefetch_related(
-        "measures__chord_events"
-    ):
-        for measure in section.measures.order_by("number_in_section"):
+    for section in prefetched_sections:
+        for measure in section.measures.all():
             flat_measure_index += 1
-            for event in measure.chord_events.order_by("beat"):
+            for event in measure.chord_events.all():
                 # (flat_measure - 1) full bars + (beat - 1) beats into
                 # the current bar
                 beat_position = (

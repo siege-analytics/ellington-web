@@ -70,19 +70,19 @@ def session_new(request: HttpRequest) -> HttpResponse:
                 if task_id:
                     messages.success(
                         request,
-                        f"created session {session.id} ΓÇö recording uploaded; "
+                        f"created session {session.id} — recording uploaded; "
                         f"analysis queued (task {task_id[:12]}...)",
                     )
                 else:
                     messages.warning(
                         request,
-                        f"created session {session.id} ΓÇö recording uploaded; "
+                        f"created session {session.id} — recording uploaded; "
                         "analysis queue unavailable, use Re-analyze to retry",
                     )
             else:
                 messages.success(
                     request,
-                    f"created session {session.id} ΓÇö recording uploaded",
+                    f"created session {session.id} — recording uploaded",
                 )
             return redirect("practice:session_detail", pk=session.id)
     else:
@@ -164,7 +164,7 @@ def recording_reanalyze(request: HttpRequest, recording_pk: int) -> HttpResponse
     else:
         messages.error(
             request,
-            f"could not queue re-analysis ΓÇö broker unreachable",
+            f"could not queue re-analysis — broker unreachable",
         )
     return redirect("practice:session_detail", pk=recording.session_id)
 
@@ -174,7 +174,7 @@ def recording_reanalyze(request: HttpRequest, recording_pk: int) -> HttpResponse
 def session_delete(request: HttpRequest, pk: int) -> HttpResponseRedirect:
     """Destructive: delete a session. CASCADE removes recordings + segments.
 
-    The on-disk Recording files are NOT deleted by CASCADE ΓÇö Django ORM
+    The on-disk Recording files are NOT deleted by CASCADE — Django ORM
     doesn't know about the storage layer. For v0 that's acceptable
     (storage is content-addressed, so leaving an orphaned blob doesn't
     leak user data per-se), but a follow-up ticket should add a
