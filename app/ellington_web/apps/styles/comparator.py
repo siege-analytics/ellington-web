@@ -72,6 +72,16 @@ class DetectedVoicing:
     """Optional position in the source audio. Used for time-localized
     feedback. sub-4 populates; smoke view leaves as None."""
 
+    measure_index: int | None = None
+    """Flat (song-wide, 1-indexed) measure number this event was aligned
+    to. None when sub-4 hasn't aligned it yet (or the smoke view doesn't
+    know). The comparator's eventual alignment step uses this to look up
+    the ground-truth ChordEvent at the same measure when computing
+    "detected said X, chart said Y" divergences. See
+    ``apps.charts.timeline.seconds_to_measure`` for the alignment
+    primitive that populates this field from ``timestamp_ms`` + Song +
+    tempo."""
+
 
 @dataclass
 class DistanceProfile:
