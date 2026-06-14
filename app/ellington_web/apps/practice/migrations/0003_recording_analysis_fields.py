@@ -13,7 +13,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("practice", "0001_initial"),
+        ("practice", "0002_practicesession_tempo_bpm"),
     ]
 
     operations = [
