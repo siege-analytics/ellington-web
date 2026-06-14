@@ -175,7 +175,24 @@ class TestCeleryTaskLifecycle(TestCase):
                 analyze_recording(recording.pk)
         recording.refresh_from_db()
         self.assertEqual(recording.analysis_status, AnalysisStatus.FAILED)
-        self.assertIn("RuntimeError", recording.notes)
+        # Error details live in structured logs, NOT mutated into the
+        # ``notes`` field — that pattern caused the concurrent-write
+        # race the review caught. The status enum + log audit trail
+        # are sufficient.
+        self.assertNotIn("RuntimeError", recording.notes)
+        self.assertNotIn("analysis_error", recording.notes)
+
+    def test_task_does_not_mutate_notes_on_success(self) -> None:
+        # Confirms the notes-append removal: completed analysis must
+        # NOT touch Recording.notes. Audit lives on
+        # analysis_completed_at + structured logs.
+        song = _build_song_with_progression()
+        recording = _build_recording(song)
+        recording.notes = "user wrote this"
+        recording.save()
+        analyze_recording(recording.pk)
+        recording.refresh_from_db()
+        self.assertEqual(recording.notes, "user wrote this")
 
 
 class TestDispatchAnalysis(TestCase):
@@ -193,6 +210,32 @@ class TestDispatchAnalysis(TestCase):
         recording.refresh_from_db()
         self.assertEqual(recording.analysis_status, AnalysisStatus.QUEUED)
         self.assertEqual(recording.analysis_task_id, "fake-task-id")
+
+    def test_queued_status_set_before_delay_call(self) -> None:
+        # The lifecycle race fix: status must flip to QUEUED before
+        # the worker can possibly observe the row. We assert the
+        # ordering by checking that the row's status was already QUEUED
+        # at the moment .delay() was called.
+        song = _build_song_with_progression()
+        recording = _build_recording(song)
+
+        observed_status: list[str] = []
+
+        def fake_delay(rec_pk):
+            # When the worker would pick this up, what status would
+            # it see in the DB?
+            observed_status.append(
+                Recording.objects.get(pk=rec_pk).analysis_status
+            )
+            return mock.Mock(id="fake-task-id")
+
+        with mock.patch(
+            "apps.practice.tasks.analyze_recording.delay",
+            side_effect=fake_delay,
+        ):
+            dispatch_analysis(recording)
+
+        self.assertEqual(observed_status, [AnalysisStatus.QUEUED])
 
     def test_broker_failure_returns_none_and_does_not_change_status(self) -> None:
         song = _build_song_with_progression()

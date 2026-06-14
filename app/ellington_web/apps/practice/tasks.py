@@ -26,18 +26,32 @@ def analyze_recording(self, recording_id: int) -> dict:
     """Run analysis on one Recording. Idempotent.
 
     Status transitions:
-        PENDING / COMPLETE / FAILED → QUEUED (set by the dispatcher
-            before calling .delay())
-        QUEUED → RUNNING (this task, on entry)
+        PENDING / QUEUED / COMPLETE / FAILED → RUNNING (this task, on entry)
         RUNNING → COMPLETE (on successful return)
         RUNNING → FAILED (on exception)
 
-    The dispatcher (view layer) is responsible for stamping
-    ``analysis_task_id`` + flipping status to QUEUED before
-    ``.delay()``. This task assumes those are already set.
+    The dispatcher (view layer) stamps ``analysis_task_id`` and
+    (optionally) sets ``analysis_status=QUEUED``; this task is
+    indifferent to the prior status and flips straight to RUNNING.
+    Audit history lives in ``analysis_completed_at`` + structured logs;
+    we deliberately do NOT mutate ``Recording.notes`` from inside the
+    worker (see ``Notes-append removed`` below).
 
     Returns a dict suitable for Celery result-backend storage (just
     counters; not the actual detection rows — those live in the DB).
+
+    **Notes-append removed (post-review fix)**
+
+    A prior version of this task did
+    ``notes=(recording.notes or '') + ...`` inside the terminal
+    ``UPDATE``. That pattern reads ``recording.notes`` into memory at
+    task start, then writes the *stale* base plus an appended fragment
+    — which silently overwrites concurrent edits (form-side note
+    edits; second analyze call via Re-analyze; Celery redelivery with
+    ``acks_late=True``). The new code logs analysis events via
+    ``_log.info`` only — structured logs are the audit trail. The
+    ``analysis_status`` enum + ``analysis_completed_at`` cover the UI
+    surface.
     """
     try:
         recording = Recording.objects.select_related("session__song").get(
@@ -55,19 +69,24 @@ def analyze_recording(self, recording_id: int) -> dict:
         outcome = analyze_recording_placeholder(recording)
     except Exception as exc:  # noqa: BLE001 — task-level: report and persist
         _log.exception(
-            "analyze_recording %s failed", recording_id
+            "analyze_recording %s failed: %s: %r",
+            recording_id,
+            type(exc).__name__,
+            exc,
         )
         Recording.objects.filter(pk=recording.pk).update(
             analysis_status=AnalysisStatus.FAILED,
-            notes=(recording.notes or "")
-            + f"\n[analysis_error] {type(exc).__name__}: {exc!r}",
         )
         raise
 
+    _log.info(
+        "analyze_recording %s complete: %s",
+        recording_id,
+        outcome.notes,
+    )
     Recording.objects.filter(pk=recording.pk).update(
         analysis_status=AnalysisStatus.COMPLETE,
         analysis_completed_at=timezone.now(),
-        notes=(recording.notes or "") + f"\n[analysis] {outcome.notes}",
     )
     return {
         "status": "complete",
@@ -80,26 +99,43 @@ def analyze_recording(self, recording_id: int) -> dict:
 def dispatch_analysis(recording: Recording) -> str | None:
     """Helper called by the view layer to fire the task.
 
-    Sets ``analysis_status=QUEUED`` and ``analysis_task_id``, then
-    calls ``.delay()``. Returns the Celery task ID for logging.
-    Returns None and logs a warning if the dispatch fails (e.g. broker
-    unreachable) — the recording stays in its previous status so the
-    user can re-try.
+    Flips ``analysis_status=QUEUED`` BEFORE calling ``.delay()`` so a
+    fast worker that picks up the task immediately doesn't observe a
+    stale prior status when it flips to RUNNING. The ``analysis_task_id``
+    is set in a second UPDATE after ``.delay()`` returns; that field is
+    diagnostic only (ops debugging) and a small write-after-delay race
+    on the ID is acceptable.
+
+    Returns the Celery task ID for logging. Returns None and logs a
+    warning if the dispatch fails (e.g. broker unreachable) — the
+    recording stays in its previous status so the user can re-try.
 
     The dispatcher is sync (cheap DB update + AMQP enqueue); the actual
     analysis runs async on the worker.
     """
+    # Set QUEUED first so the worker can't observe a stale prior
+    # status. If .delay() fails we revert in the except block below.
+    prior_status = recording.analysis_status
+    Recording.objects.filter(pk=recording.pk).update(
+        analysis_status=AnalysisStatus.QUEUED
+    )
+
     try:
         async_result = analyze_recording.delay(recording.pk)
-    except Exception as exc:  # noqa: BLE001 — broker errors must not crash views
+    except Exception:  # noqa: BLE001 — broker errors must not crash views
         _log.exception(
             "dispatch_analysis: broker enqueue failed for recording %s",
             recording.pk,
         )
+        # Revert to prior status so the UI doesn't show a stuck QUEUED
+        # row that no worker will ever pick up.
+        Recording.objects.filter(pk=recording.pk).update(
+            analysis_status=prior_status
+        )
         return None
 
+    # task_id is diagnostic only — small race on this UPDATE is fine
     Recording.objects.filter(pk=recording.pk).update(
-        analysis_status=AnalysisStatus.QUEUED,
         analysis_task_id=async_result.id,
     )
     _log.info(
