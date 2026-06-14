@@ -161,6 +161,12 @@ class PracticeSession(models.Model):
         related_name="practice_sessions",
     )
 
+    # Per-session tempo override. Form collects this at create time;
+    # comparator and (future) sub-4 alignment use it. When None, falls
+    # back to ``song.default_tempo_bpm`` then to a system default — see
+    # ``apps.charts.timeline.resolve_tempo``.
+    tempo_bpm = models.PositiveIntegerField(null=True, blank=True)
+
     status = models.CharField(
         max_length=16,
         choices=SessionStatus.choices,

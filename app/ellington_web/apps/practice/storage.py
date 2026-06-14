@@ -14,6 +14,7 @@ no schema migration needed.
 from __future__ import annotations
 
 import hashlib
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -23,6 +24,14 @@ from django.conf import settings
 
 _RECORDINGS_SUBDIR = "recordings"
 _CHUNK_SIZE = 64 * 1024  # 64KB — balances RAM use vs syscall overhead
+
+# Allowed audio extensions, shared by ``forms.PracticeSessionForm`` (which
+# rejects uploads at the boundary) and by ``_extension_from_name`` below
+# (which strips unknown extensions as defense-in-depth). Keep this list
+# the single source of truth so the two layers don't drift.
+ALLOWED_AUDIO_EXTENSIONS: frozenset[str] = frozenset(
+    {".wav", ".mp3", ".m4a", ".flac", ".aiff", ".ogg"}
+)
 
 
 @dataclass(frozen=True)
@@ -62,14 +71,18 @@ def store_upload(uploaded_file: IO[bytes], original_name: str) -> StoredFile:
     base_dir = Path(settings.MEDIA_ROOT) / _RECORDINGS_SUBDIR
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write to a temp path first, hash as we go, then rename to the
-    # content-addressed final name. This avoids partial-write races on
-    # the final path.
-    tmp_path = base_dir / f".partial-{id(uploaded_file)}"
+    # Write to an OS-allocated temp path first, hash as we go, then
+    # atomic-rename to the content-addressed final name. Using
+    # ``tempfile.NamedTemporaryFile`` (rather than ``id(uploaded_file)``)
+    # gives us a unique name even when multiple processes (e.g. a future
+    # Celery worker pool) call store_upload concurrently — ``id()`` is
+    # only unique within one interpreter process.
+    tmp_fd, tmp_str = tempfile.mkstemp(prefix=".partial-", dir=str(base_dir))
+    tmp_path = Path(tmp_str)
     hasher = hashlib.sha256()
     size = 0
     try:
-        with tmp_path.open("wb") as out:
+        with open(tmp_fd, "wb") as out:
             for chunk in _iter_chunks(uploaded_file):
                 hasher.update(chunk)
                 out.write(chunk)
@@ -99,8 +112,23 @@ def store_upload(uploaded_file: IO[bytes], original_name: str) -> StoredFile:
 
 
 def absolute_path_for(file_ref: str) -> Path:
-    """Resolve a Recording.file_ref to an absolute filesystem path."""
-    return Path(settings.MEDIA_ROOT) / file_ref
+    """Resolve a Recording.file_ref to an absolute filesystem path.
+
+    Guards against path-traversal: the resolved path must live inside
+    ``MEDIA_ROOT``. Raises ``ValueError`` for inputs like
+    ``"../../etc/passwd"`` or any string whose normalized form escapes
+    the media root, even when supplied via a future Celery worker or a
+    bypass-the-form code path. ``store_upload`` produces safe refs by
+    construction (``recordings/<sha256>.<ext>``); this check defends the
+    *consumer* surface, not the producer.
+    """
+    base = Path(settings.MEDIA_ROOT).resolve()
+    candidate = (base / file_ref).resolve()
+    if not candidate.is_relative_to(base):
+        raise ValueError(
+            f"file_ref escapes MEDIA_ROOT: {file_ref!r}"
+        )
+    return candidate
 
 
 def _iter_chunks(uploaded_file: IO[bytes]):
@@ -130,12 +158,17 @@ def _extension_from_name(name: str) -> str:
     if "." not in base:
         return ""
     ext = "." + base.rsplit(".", 1)[1].lower()
-    # Only allow a small whitelist of audio extensions; everything else
-    # gets stored without an extension. The form layer should already
-    # reject unsupported types, but this is defense in depth.
-    if ext in {".wav", ".mp3", ".m4a", ".flac", ".aiff", ".ogg"}:
+    # Only allow the small whitelist of audio extensions; everything
+    # else gets stored without an extension. The form layer should
+    # already reject unsupported types, but this is defense in depth.
+    if ext in ALLOWED_AUDIO_EXTENSIONS:
         return ext
     return ""
 
 
-__all__ = ["StoredFile", "absolute_path_for", "store_upload"]
+__all__ = [
+    "ALLOWED_AUDIO_EXTENSIONS",
+    "StoredFile",
+    "absolute_path_for",
+    "store_upload",
+]

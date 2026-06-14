@@ -17,6 +17,14 @@
       </tr>
     {% endif %}
     <tr><th>Target style</th><td>{{ session.target_preset.display_name }}</td></tr>
+    <tr>
+      <th>Tempo</th>
+      <td>
+        {% if session.tempo_bpm %}{{ session.tempo_bpm }} BPM
+        {% elif session.song.default_tempo_bpm %}{{ session.song.default_tempo_bpm }} BPM <small>(song default)</small>
+        {% else %}<em>not set</em>{% endif %}
+      </td>
+    </tr>
     {% if session.notes %}<tr><th>Notes</th><td>{{ session.notes|linebreaksbr }}</td></tr>{% endif %}
   </table>
 

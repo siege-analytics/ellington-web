@@ -6,7 +6,7 @@ isolation is via queryset filtering: a user only ever sees their own
 
 The detail view walks the linked Song's chord progression so the user
 sees what the chart says alongside their recording. Walking is done
-inline here (a small SectionΓÇæmeasure ÔåÆ chordΓÇæevent loop) rather than
+inline here (a small Section → Measure → ChordEvent loop) rather than
 calling ``apps.charts.timeline.flatten_chord_events`` so this PR
 doesn't depend on #64 / PR #64 landing first. After #64 merges, the
 inline loop here is a candidate to swap to the helper for consistency.
@@ -16,10 +16,13 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Prefetch
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
+
+from apps.charts.models import ChordEvent, Measure, Section
 
 from .forms import PracticeSessionForm
 from .models import PracticeSession, Recording
@@ -62,7 +65,7 @@ def session_new(request: HttpRequest) -> HttpResponse:
             session = form.save(user=request.user)
             messages.success(
                 request,
-                f"created session {session.id} ΓÇö recording uploaded",
+                f"created session {session.id} — recording uploaded",
             )
             return redirect("practice:session_detail", pk=session.id)
     else:
@@ -87,17 +90,36 @@ def session_detail(request: HttpRequest, pk: int) -> HttpResponse:
     )
     recordings = list(session.recordings.all())
 
-    # Walk the song's chord progression in play order. Inline here so
-    # this PR doesn't depend on apps.charts.timeline (Phase 1b / PR #64).
+    # Walk the song's chord progression in play order. Prefetch the
+    # whole tree with the sort orders applied at the queryset level so
+    # the inner loops don't refetch — using ``.order_by()`` on a
+    # related-manager iterator invalidates ``prefetch_related`` and
+    # re-issues SELECTs per section + per measure (~37 queries for a
+    # 32-bar 4-section song). Inline here so this PR doesn't depend on
+    # apps.charts.timeline (Phase 1b / PR #64); after #64 merges we can
+    # swap to ``flatten_chord_events``.
     chord_rows: list[dict] = []
     if session.song is not None:
+        prefetched_sections = (
+            session.song.sections.order_by("order_index").prefetch_related(
+                Prefetch(
+                    "measures",
+                    queryset=Measure.objects.order_by(
+                        "number_in_section"
+                    ).prefetch_related(
+                        Prefetch(
+                            "chord_events",
+                            queryset=ChordEvent.objects.order_by("beat"),
+                        )
+                    ),
+                )
+            )
+        )
         flat_measure_index = 0
-        for section in session.song.sections.order_by("order_index").prefetch_related(
-            "measures__chord_events"
-        ):
-            for measure in section.measures.order_by("number_in_section"):
+        for section in prefetched_sections:
+            for measure in section.measures.all():
                 flat_measure_index += 1
-                events = list(measure.chord_events.order_by("beat"))
+                events = list(measure.chord_events.all())
                 chord_rows.append(
                     {
                         "flat_measure_index": flat_measure_index,
@@ -125,7 +147,7 @@ def session_detail(request: HttpRequest, pk: int) -> HttpResponse:
 def session_delete(request: HttpRequest, pk: int) -> HttpResponseRedirect:
     """Destructive: delete a session. CASCADE removes recordings + segments.
 
-    The on-disk Recording files are NOT deleted by CASCADE ΓÇö Django ORM
+    The on-disk Recording files are NOT deleted by CASCADE — Django ORM
     doesn't know about the storage layer. For v0 that's acceptable
     (storage is content-addressed, so leaving an orphaned blob doesn't
     leak user data per-se), but a follow-up ticket should add a

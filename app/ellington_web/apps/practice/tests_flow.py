@@ -124,6 +124,34 @@ class TestStoreUpload(TestCase):
         self.assertEqual(result.extension, "")
         self.assertFalse(result.file_ref.endswith(".txt"))
 
+    def test_absolute_path_rejects_traversal(self) -> None:
+        # ``absolute_path_for`` must refuse any file_ref that escapes
+        # MEDIA_ROOT — protects future Celery workers / analyzers that
+        # consume the field from a DB row they didn't construct
+        # themselves.
+        from apps.practice.storage import absolute_path_for
+
+        for malicious in (
+            "../etc/passwd",
+            "../../etc/passwd",
+            "recordings/../../etc/passwd",
+            "/etc/passwd",
+        ):
+            with self.assertRaises(
+                ValueError, msg=f"should reject: {malicious!r}"
+            ):
+                absolute_path_for(malicious)
+
+    def test_absolute_path_accepts_legitimate_ref(self) -> None:
+        # Files produced by store_upload must round-trip cleanly through
+        # absolute_path_for after the traversal guard.
+        from apps.practice.storage import absolute_path_for
+
+        upload = _wav_upload(body=b"x")
+        result = store_upload(upload, upload.name)
+        resolved = absolute_path_for(result.file_ref)
+        self.assertTrue(resolved.exists())
+
 
 @override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
 class TestPracticeSessionForm(TestCase):
@@ -152,10 +180,15 @@ class TestPracticeSessionForm(TestCase):
         session = form.save(user=self.user)
         self.assertIsInstance(session, PracticeSession)
         self.assertEqual(session.user_id, self.user.id)
+        # tempo_bpm lands as a proper field, not buried in Recording.notes
+        self.assertEqual(session.tempo_bpm, 120)
         self.assertEqual(session.recordings.count(), 1)
         rec = session.recordings.first()
         self.assertIn("recordings/", rec.file_ref)
-        self.assertIn("tempo_bpm=120", rec.notes)
+        # Recording.notes carries only opaque storage metadata; tempo
+        # lives on the Session row now.
+        self.assertNotIn("tempo_bpm", rec.notes)
+        self.assertIn("sha256=", rec.notes)
 
     def test_rejects_non_audio_extension(self) -> None:
         form = PracticeSessionForm(
@@ -223,6 +256,8 @@ class TestPracticeFlowViews(TestCase):
         self.assertEqual(response.status_code, 302)
         session = PracticeSession.objects.get(user=self.alice)
         self.assertEqual(session.song_id, self.song.pk)
+        # tempo_bpm round-trips end-to-end (form POST → DB column)
+        self.assertEqual(session.tempo_bpm, 140)
         self.assertEqual(session.recordings.count(), 1)
         self.assertIn("hard bop", session.notes)
 

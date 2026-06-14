@@ -14,12 +14,8 @@ from apps.charts.models import Song
 from apps.styles.models import StylePreset
 
 from .models import PracticeSession, Recording
-from .storage import store_upload
+from .storage import ALLOWED_AUDIO_EXTENSIONS, store_upload
 
-
-# Accepted upload content types — matched by extension since browsers
-# are inconsistent about MIME types for audio files.
-_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".aiff", ".ogg"}
 
 # Hard cap on upload size to protect Daphne from absurd uploads. A
 # 10-minute uncompressed 48kHz stereo WAV is ~110MB; cap at 500MB to
@@ -101,10 +97,10 @@ class PracticeSessionForm(forms.Form):
                 "with a .wav / .mp3 / .m4a / .flac / .aiff / .ogg suffix"
             )
         ext = "." + name.rsplit(".", 1)[1]
-        if ext not in _AUDIO_EXTENSIONS:
+        if ext not in ALLOWED_AUDIO_EXTENSIONS:
             raise forms.ValidationError(
                 f"unsupported audio format {ext!r}; allowed: "
-                + ", ".join(sorted(_AUDIO_EXTENSIONS))
+                + ", ".join(sorted(ALLOWED_AUDIO_EXTENSIONS))
             )
         return uploaded
 
@@ -123,6 +119,7 @@ class PracticeSessionForm(forms.Form):
             user=user,
             song=cd["song"],
             target_preset=cd["target_preset"],
+            tempo_bpm=cd["tempo_bpm"],
             notes=cd.get("notes", ""),
         )
 
@@ -131,8 +128,7 @@ class PracticeSessionForm(forms.Form):
             session=session,
             file_ref=stored.file_ref,
             notes=(
-                f"tempo_bpm={cd['tempo_bpm']}; sha256={stored.sha256}; "
-                f"original={cd['recording'].name!r}"
+                f"sha256={stored.sha256}; original={cd['recording'].name!r}"
             ),
         )
         return session
