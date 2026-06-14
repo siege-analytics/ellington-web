@@ -34,7 +34,19 @@
       {% for rec in recordings %}
         <li>
           <audio controls preload="metadata" src="{{ MEDIA_URL }}{{ rec.file_ref }}"></audio>
-          <small>{{ rec.notes }}</small>
+          <div>
+            <strong>Analysis:</strong> {{ rec.get_analysis_status_display }}
+            {% if rec.analysis_completed_at %}
+              <small>(at {{ rec.analysis_completed_at|date:"Y-m-d H:i" }})</small>
+            {% endif %}
+            <form method="post"
+                  action="{% url 'practice:recording_reanalyze' rec.id %}"
+                  style="display:inline; margin-left:1em">
+              {% csrf_token %}
+              <button type="submit">Re-analyze</button>
+            </form>
+          </div>
+          <small>{{ rec.notes|linebreaksbr }}</small>
         </li>
       {% endfor %}
     </ul>
