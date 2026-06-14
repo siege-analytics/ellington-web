@@ -1,0 +1,72 @@
+{% extends "practice/base.html" %}
+{% block title %}Practice session #{{ session.id }} — Ellington{% endblock %}
+{% block content %}
+  <h1>Practice session #{{ session.id }}</h1>
+
+  <table style="width:auto; margin-bottom:1.5em">
+    <tr><th>Started</th><td>{{ session.started_at|date:"Y-m-d H:i" }}</td></tr>
+    <tr><th>Status</th><td>{{ session.get_status_display }}</td></tr>
+    {% if session.song %}
+      <tr>
+        <th>Song</th>
+        <td>
+          {{ session.song.title }}
+          {% if session.song.composer %}— {{ session.song.composer }}{% endif %}
+          ({{ session.song.key }} / {{ session.song.time_signature }})
+        </td>
+      </tr>
+    {% endif %}
+    <tr><th>Target style</th><td>{{ session.target_preset.display_name }}</td></tr>
+    <tr>
+      <th>Tempo</th>
+      <td>
+        {% if session.tempo_bpm %}{{ session.tempo_bpm }} BPM
+        {% elif session.song.default_tempo_bpm %}{{ session.song.default_tempo_bpm }} BPM <small>(song default)</small>
+        {% else %}<em>not set</em>{% endif %}
+      </td>
+    </tr>
+    {% if session.notes %}<tr><th>Notes</th><td>{{ session.notes|linebreaksbr }}</td></tr>{% endif %}
+  </table>
+
+  <h2>Recordings</h2>
+  {% if recordings %}
+    <ul>
+      {% for rec in recordings %}
+        <li>
+          <audio controls preload="metadata" src="{{ MEDIA_URL }}{{ rec.file_ref }}"></audio>
+          <small>{{ rec.notes }}</small>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p><em>No recordings yet.</em></p>
+  {% endif %}
+
+  {% if chord_rows %}
+    <h2>Chord progression</h2>
+    <p><small>Sub-4 will fill in detected chord events here once the audio pipeline ships.</small></p>
+    <div class="chord-grid">
+      {% regroup chord_rows by section_label as section_groups %}
+      {% for section in section_groups %}
+        <div class="section-break">Section {{ section.grouper|default:"(unlabeled)" }}</div>
+        {% for row in section.list %}
+          <div class="measure">
+            <small>m{{ row.flat_measure_index }}</small><br>
+            {% for beat, sym in row.chord_events %}
+              <strong>{{ sym }}</strong>{% if not forloop.last %} /{% endif %}
+            {% empty %}<em>—</em>{% endfor %}
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="post" action="{% url 'practice:session_delete' session.id %}" style="margin-top:2em">
+    {% csrf_token %}
+    <button type="submit" class="destructive"
+            onclick="return confirm('Delete this session? Recordings will be removed from the database (audio files remain on disk).');">
+      Delete session
+    </button>
+    <a href="{% url 'practice:session_list' %}" style="margin-left:1em">Back to sessions</a>
+  </form>
+{% endblock %}
