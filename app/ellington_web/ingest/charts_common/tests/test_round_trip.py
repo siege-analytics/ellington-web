@@ -65,6 +65,14 @@ PARITY_CHORDS: list[tuple[str, str, str, str | None]] = [
     ("C7b5b9", "C7b5b9", "C7b5b9", None),  # input order: b5 then b9 — same canonical
     ("C7b9#5", "C7b9#5", "C7#5b9", None),  # b9 + #5 normalize to #5 first (degree 5 first)
     ("C7#5b9", "C7#5b9", "C7#5b9", None),  # already-canonical input — stays put
+    # Alt umbrella + explicit alteration interaction (third-pass review).
+    # Policy: when explicit alterations are present, ``alt`` is dropped
+    # (lossless preservation of comparator-relevant info). Bare ``alt``
+    # — no explicit accompaniment — is preserved as the umbrella.
+    # iRealPro writes both forms; music21 accepts ``alt`` via the
+    # ``alter`` modifier but the comparator-side canonical is what we
+    # pin here.
+    ("C7altb9", "C7b9", "C7b9", None),
     # min-maj7 family: iRealPro writes -^7, music21 understands mM7
     # (m-maj7 specifically rejects in 9.x parser). The canonical
     # ``m-maj7`` is where both adapters meet. This is the family

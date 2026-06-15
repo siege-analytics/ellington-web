@@ -39,6 +39,11 @@ from dataclasses import dataclass
 _ALTERATION_TOKEN_RE = re.compile(
     r"(?:b5|\#5|b9|\#9|\#11|b13|alt|add9|add2)"
 )
+# Add-tones (add9, add2) sort after explicit alterations but before
+# the umbrella ``alt``. Pulled out as a named constant per the third-
+# pass review note — the magic number 90 obscured intent.
+_ADD_TONE_RANK = 90
+_ALT_UMBRELLA_RANK = 99
 _ALTERATION_SORT_KEY: dict[str, tuple[int, int]] = {
     # (degree, accidental_rank — flat=0, sharp=1)
     "b5":   (5, 0),
@@ -47,9 +52,9 @@ _ALTERATION_SORT_KEY: dict[str, tuple[int, int]] = {
     "#9":   (9, 1),
     "#11":  (11, 1),
     "b13":  (13, 0),
-    "alt":  (99, 0),   # umbrella "alt" goes last
-    "add9": (90, 0),   # add-tones after alterations, before alt
-    "add2": (90, 1),
+    "add9": (_ADD_TONE_RANK, 0),
+    "add2": (_ADD_TONE_RANK, 1),
+    "alt":  (_ALT_UMBRELLA_RANK, 0),  # umbrella "alt" sorts last
 }
 
 
@@ -125,6 +130,16 @@ def canonical_alterations(alterations: str) -> str:
         else:
             leftover.append(alterations[pos])
             pos += 1
+    # ``alt`` is an umbrella ("any altered tone fits") and pairs
+    # incoherently with explicit b9 / #9 / b5 / #5 alterations —
+    # ``b9alt`` is semantically nonsense in lead-sheet convention.
+    # Policy: when explicit alterations are present, drop the umbrella
+    # ``alt`` (lossless — the explicit info is comparator-relevant and
+    # would otherwise be hidden behind the umbrella). When ``alt``
+    # appears alone, keep it.
+    explicit_count = sum(1 for tok in recognized if tok != "alt")
+    if explicit_count > 0:
+        recognized = [tok for tok in recognized if tok != "alt"]
     recognized.sort(key=lambda tok: _ALTERATION_SORT_KEY.get(tok, (100, 0)))
     return "".join(recognized) + "".join(leftover)
 
