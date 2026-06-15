@@ -25,6 +25,12 @@ FIXTURE_XML = (
 )
 PASS2_XML = Path(__file__).parent / "data" / "pass2_system_breaks.musicxml"
 PASS2_OVER_CAP_XML = Path(__file__).parent / "data" / "pass2_over_cap.musicxml"
+# Boundary fixture: exactly _SYSTEM_BREAK_SECTION_CAP + 1 non-initial
+# breaks. If the cap is ever bumped without re-running the floor logic,
+# this test fails and forces re-examination.
+PASS2_BOUNDARY_XML = (
+    Path(__file__).parent / "data" / "pass2_boundary_cap_plus_one.musicxml"
+)
 PASS3_XML = Path(__file__).parent / "data" / "pass3_no_markers.musicxml"
 
 
@@ -93,6 +99,22 @@ class TestSectionFallbacks(SimpleTestCase):
         self.assertEqual(len(song.sections), 1)
         self.assertEqual(song.sections[0].label, "")
         # Warning explains why we abandoned Pass 2
+        self.assertTrue(
+            any("exceeds floor" in w for w in song.warnings),
+            f"expected over-cap warning, got {song.warnings}",
+        )
+
+    def test_pass2_boundary_at_cap_plus_one_falls_through(self) -> None:
+        # Fixture has exactly _SYSTEM_BREAK_SECTION_CAP + 1 non-initial
+        # breaks — one more than the floor. This pins the boundary so
+        # a future cap bump can't silently weaken the floor.
+        from ingest.musescore import parser as parser_mod
+
+        # Sanity check that the fixture matches the cap declared in code
+        self.assertEqual(parser_mod._SYSTEM_BREAK_SECTION_CAP, 4)
+        song = parse_path(PASS2_BOUNDARY_XML)[0]
+        self.assertEqual(len(song.sections), 1)
+        self.assertEqual(song.sections[0].label, "")
         self.assertTrue(
             any("exceeds floor" in w for w in song.warnings),
             f"expected over-cap warning, got {song.warnings}",

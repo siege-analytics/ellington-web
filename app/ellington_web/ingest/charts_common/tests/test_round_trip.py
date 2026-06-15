@@ -17,54 +17,102 @@ from ingest.irealpro.normalize import normalize_chord_symbol as irealpro_norm
 from ingest.musescore.normalize import normalize_music21_chord_symbol
 
 
-# (iRealPro_input, MuseScore_input, expected_canonical)
+# (iRealPro_input, MuseScore_input, expected_canonical, expected_bass)
 #
-# Both columns describe the same chord in the source format's
-# notation; both must canonicalize to the value in the third column.
-# Comments in the source format on the right call out the dialect
-# difference (iRealPro's ``-`` vs music21's ``m``, etc.).
-PARITY_CHORDS: list[tuple[str, str, str]] = [
-    ("C", "C", "C"),
-    ("C-7", "Cm7", "Cm7"),
-    ("D-7", "Dm7", "Dm7"),
-    ("G7", "G7", "G7"),
-    ("C^7", "Cmaj7", "Cmaj7"),
-    ("Co7", "Co7", "Cdim7"),
-    ("Ch7", "Cm7b5", "Cm7b5"),
-    # Flat root: iRealPro uses ASCII 'b' (or Unicode ♭); music21
-    # uses '-'. Both must land on 'Bb7'.
-    ("Bb7", "B-7", "Bb7"),
-    # Sharp root survives ASCII '#' on both sides.
-    ("F#-7", "F#m7", "F#m7"),
+# Both source columns describe the same chord; both must canonicalize
+# to the same (canonical, bass) pair. ``expected_bass`` is None for
+# non-slash chords. Comments inline call out where the source dialects
+# diverge (iRealPro's ``-`` vs music21's ``m``, iRealPro's ``^`` vs
+# music21's ``maj``, music21's flat spelling ``-`` vs iRealPro's
+# ``b``, etc.).
+#
+# Coverage matrix (post #74 second-pass review — slash + alteration
+# rows added because that's where #76 says the alteration token is
+# fragile, and where a regression would otherwise sneak in unseen):
+#   - basic qualities (major, minor7, dom7, maj7, dim7, half-dim7)
+#   - flat root (Bb7 ↔ B-7)
+#   - sharp root (F#m7 ↔ F#m7)
+#   - dom7 alterations (b9, #9, b5, #5)
+#   - multi-alteration ordering stability (7b9b5)
+#   - slash chord with bass note preservation (C/G, Bb7/F)
+PARITY_CHORDS: list[tuple[str, str, str, str | None]] = [
+    # Basics
+    ("C", "C", "C", None),
+    ("C-7", "Cm7", "Cm7", None),
+    ("D-7", "Dm7", "Dm7", None),
+    ("G7", "G7", "G7", None),
+    ("C^7", "Cmaj7", "Cmaj7", None),
+    ("Co7", "Co7", "Cdim7", None),
+    ("Ch7", "Cm7b5", "Cm7b5", None),
+    # Accidentals on the root
+    ("Bb7", "B-7", "Bb7", None),
+    ("F#-7", "F#m7", "F#m7", None),
+    # Dominant alterations — same codepath as #76 (alteration-token
+    # semitone math). The parity test pins behavior so a refactor of
+    # _alteration_token can't silently regress.
+    ("C7b9", "C7b9", "C7b9", None),
+    ("C7#9", "C7#9", "C7#9", None),
+    ("C7b5", "C7b5", "C7b5", None),
+    ("C7#5", "C7#5", "C7#5", None),
+    # Multi-alteration ordering stability: b9 + b5 must come out in
+    # the same order on both adapters, else the comparator's
+    # chord_symbol equality misses.
+    ("C7b9b5", "C7b9b5", "C7b9b5", None),
+    # Slash chords — bass preserved separately from the canonical.
+    ("C/G", "C/G", "C", "G"),
+    ("Bb7/F", "B-7/F", "Bb7", "F"),
 ]
 
 
 class TestCrossAdapterParity(SimpleTestCase):
-    """For every chord pair, both adapters produce the same canonical."""
+    """For every chord pair, both adapters produce the same canonical AND bass."""
 
     def test_iRealPro_vs_music21_canonical_parity(self) -> None:
         failures: list[str] = []
-        for ireal_in, muse_in, expected in PARITY_CHORDS:
-            ireal_out = irealpro_norm(ireal_in).canonical
+        for ireal_in, muse_in, expected_canonical, expected_bass in PARITY_CHORDS:
+            ireal_out = irealpro_norm(ireal_in)
             muse_out = normalize_music21_chord_symbol(
                 m21_harmony.ChordSymbol(muse_in)
-            ).canonical
-            if ireal_out != expected:
+            )
+            # Canonical chord_symbol must match the expected and each other
+            if ireal_out.canonical != expected_canonical:
                 failures.append(
-                    f"iRealPro({ireal_in!r}) → {ireal_out!r}, "
-                    f"expected {expected!r}"
+                    f"iRealPro({ireal_in!r}) canonical={ireal_out.canonical!r}, "
+                    f"expected {expected_canonical!r}"
                 )
-            if muse_out != expected:
+            if muse_out.canonical != expected_canonical:
                 failures.append(
-                    f"music21({muse_in!r}) → {muse_out!r}, "
-                    f"expected {expected!r}"
+                    f"music21({muse_in!r}) canonical={muse_out.canonical!r}, "
+                    f"expected {expected_canonical!r}"
                 )
-            if ireal_out != muse_out:
+            if ireal_out.canonical != muse_out.canonical:
                 failures.append(
-                    f"divergence on {expected!r}: "
-                    f"iRealPro→{ireal_out!r}, music21→{muse_out!r}"
+                    f"canonical divergence on {expected_canonical!r}: "
+                    f"iRealPro→{ireal_out.canonical!r}, "
+                    f"music21→{muse_out.canonical!r}"
+                )
+            # Slash-chord bass must match too — comparator-relevant
+            # for inversion-aware critique, and the place the original
+            # iRealPro path silently dropped the bass on malformed
+            # input before we tightened slash-bass parsing.
+            if ireal_out.bass != expected_bass:
+                failures.append(
+                    f"iRealPro({ireal_in!r}) bass={ireal_out.bass!r}, "
+                    f"expected {expected_bass!r}"
+                )
+            if muse_out.bass != expected_bass:
+                failures.append(
+                    f"music21({muse_in!r}) bass={muse_out.bass!r}, "
+                    f"expected {expected_bass!r}"
+                )
+            if ireal_out.bass != muse_out.bass:
+                failures.append(
+                    f"bass divergence on {expected_canonical!r}: "
+                    f"iRealPro→{ireal_out.bass!r}, "
+                    f"music21→{muse_out.bass!r}"
                 )
         self.assertEqual(
-            failures, [], "Cross-adapter canonical parity broken:\n  - "
-            + "\n  - ".join(failures),
+            failures,
+            [],
+            "Cross-adapter parity broken:\n  - " + "\n  - ".join(failures),
         )
