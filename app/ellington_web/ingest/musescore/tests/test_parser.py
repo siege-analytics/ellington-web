@@ -23,6 +23,9 @@ from ingest.musescore import parser as parser_mod
 FIXTURE_XML = (
     Path(__file__).parent / "data" / "two_section_sample.musicxml"
 )
+PASS2_XML = Path(__file__).parent / "data" / "pass2_system_breaks.musicxml"
+PASS2_OVER_CAP_XML = Path(__file__).parent / "data" / "pass2_over_cap.musicxml"
+PASS3_XML = Path(__file__).parent / "data" / "pass3_no_markers.musicxml"
 
 
 class TestParseMusicXml(SimpleTestCase):
@@ -67,6 +70,45 @@ class TestParseMusicXml(SimpleTestCase):
         self.assertEqual(beats[0], 1.0)
         # Second chord on offset 2.0 in 4/4 → beat 3.0
         self.assertEqual(beats[1], 3.0)
+
+
+class TestSectionFallbacks(SimpleTestCase):
+    """Pass 2 (system breaks) and Pass 3 (single section) cascades."""
+
+    def test_pass2_synthesizes_section_labels_from_system_breaks(self) -> None:
+        # No RehearsalMarks, system breaks at m1 and m3 → 2 sections A / B
+        song = parse_path(PASS2_XML)[0]
+        labels = [s.label for s in song.sections]
+        self.assertEqual(labels, ["A", "B"])
+        # Warning surfaced so operators know the section labels were synthesized
+        self.assertTrue(
+            any("synthesized from system breaks" in w for w in song.warnings),
+            f"expected synthesis warning, got {song.warnings}",
+        )
+
+    def test_pass2_over_cap_falls_through_to_single_section(self) -> None:
+        # System break on every measure → would naively explode to N sections;
+        # the floor (post-#74 review) demotes to Pass 3 single section.
+        song = parse_path(PASS2_OVER_CAP_XML)[0]
+        self.assertEqual(len(song.sections), 1)
+        self.assertEqual(song.sections[0].label, "")
+        # Warning explains why we abandoned Pass 2
+        self.assertTrue(
+            any("exceeds floor" in w for w in song.warnings),
+            f"expected over-cap warning, got {song.warnings}",
+        )
+
+    def test_pass3_single_unlabeled_section_when_no_markers(self) -> None:
+        song = parse_path(PASS3_XML)[0]
+        self.assertEqual(len(song.sections), 1)
+        self.assertEqual(song.sections[0].label, "")
+        self.assertTrue(
+            any(
+                "no RehearsalMarks or system breaks" in w
+                for w in song.warnings
+            ),
+            f"expected pass-3 warning, got {song.warnings}",
+        )
 
 
 class TestMscoreCliDiscovery(SimpleTestCase):

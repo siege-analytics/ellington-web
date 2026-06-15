@@ -106,6 +106,14 @@ class MuseScoreNotFoundError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
+# Pass-2 fallback floor (see ``_detect_section_boundaries``). Tunes
+# with more system-breaks than this many *post-initial* break events
+# are treated as having no meaningful section structure rather than
+# being chopped into N tiny one-bar sections — typical chord-melody
+# arrangements with one chord per system would otherwise produce
+# pathological output.
+_SYSTEM_BREAK_SECTION_CAP = 4
+
 _MSCORE_ENV_VAR = "ELLINGTON_MSCORE_BIN"
 _DEFAULT_MSCORE_CANDIDATES = (
     "mscore",
@@ -172,10 +180,13 @@ class _MuseScoreXmlContext:
         os.close(fd)
         self._xml_path = Path(tmp)
         try:
+            # capture_output=True with text=False lets us defer decoding
+            # so we can substitute on undecodable bytes — mscore on
+            # non-UTF-8 locales (CP1252 etc.) otherwise crashes the
+            # decode itself before we get to look at stderr.
             result = subprocess.run(
                 [mscore, str(self._mscz_path), "-o", str(self._xml_path)],
                 capture_output=True,
-                text=True,
                 timeout=60,
                 check=False,
             )
@@ -184,8 +195,24 @@ class _MuseScoreXmlContext:
             raise RuntimeError(
                 f"mscore conversion timed out after 60s for {self._mscz_path}"
             ) from exc
-        if result.returncode != 0 or not self._xml_path.exists():
-            stderr = (result.stderr or "").strip()
+        stderr_raw = result.stderr or b""
+        # Truncate to the first 2KB — mscore on some scores spits tens
+        # of KB of MuseSampler warnings even on success, and we don't
+        # want to flood the error message.
+        stderr = stderr_raw[:2048].decode("utf-8", errors="replace").strip()
+        if len(stderr_raw) > 2048:
+            stderr += f" ... (truncated, {len(stderr_raw)} bytes total)"
+        if not self._xml_path.exists():
+            # Distinguish "ran but produced nothing" from "non-zero exit".
+            # mscore is known to exit 0 even when the output path is
+            # invalid (e.g. unwritable parent dir, malformed -o syntax)
+            # so the exit code alone isn't sufficient.
+            self._cleanup()
+            raise RuntimeError(
+                f"mscore exited {result.returncode} but produced no output "
+                f"for {self._mscz_path}: {stderr or '(no stderr)'}"
+            )
+        if result.returncode != 0:
             self._cleanup()
             raise RuntimeError(
                 f"mscore exited {result.returncode} converting "
@@ -370,6 +397,13 @@ def _detect_section_boundaries(
     # Pass 2: system breaks. Lead-sheet convention is one system per
     # formal section; not always true, but a useful fallback when the
     # arranger didn't add rehearsal marks. Labels are synthesized.
+    #
+    # Floor (post-review on PR #74): chord-melody arrangements often
+    # have one chord per system, which would degenerate this pass into
+    # N single-bar "sections" for an N-bar tune. If we see more than
+    # ``_SYSTEM_BREAK_SECTION_CAP`` system breaks, the arranger almost
+    # certainly didn't intend those as formal-section boundaries and we
+    # fall through to Pass 3 (single section) instead.
     breaks: list[tuple[int, str]] = []
     for idx, m in enumerate(measures):
         if list(m.getElementsByClass(SystemLayout)):
@@ -379,7 +413,7 @@ def _detect_section_boundaries(
         # piece starts with a system, that's not a section boundary.
         if breaks[0][0] == 0:
             breaks = breaks[1:]
-        if breaks:
+        if breaks and len(breaks) <= _SYSTEM_BREAK_SECTION_CAP:
             # Label A, B, C, … in order; first section gets "A"
             labeled = [(0, "A")] + [
                 (idx, chr(ord("A") + i + 1)) for i, (idx, _) in enumerate(breaks)
@@ -388,6 +422,13 @@ def _detect_section_boundaries(
                 "section labels synthesized from system breaks; no RehearsalMarks present"
             )
             return labeled
+        if breaks:
+            warnings.append(
+                f"system-break count ({len(breaks) + 1}) exceeds floor "
+                f"({_SYSTEM_BREAK_SECTION_CAP + 1}); falling through to single "
+                "section. Almost certainly a chord-melody arrangement with one "
+                "system per measure."
+            )
 
     # Pass 3: single unlabeled section
     warnings.append(
