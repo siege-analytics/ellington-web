@@ -9,10 +9,7 @@ from __future__ import annotations
 
 from django.test import SimpleTestCase
 
-try:
-    from music21 import harmony as m21_harmony
-except ImportError:  # pragma: no cover — music21 is a required dep
-    m21_harmony = None
+from music21 import harmony as m21_harmony
 
 from ingest.musescore.normalize import normalize_music21_chord_symbol
 

@@ -247,9 +247,7 @@ def _read_musicxml(xml_path: Path) -> "Score":
 
 def _map_score(score: "Score") -> ParsedSong:
     """Convert a music21 ``Score`` to our ``ParsedSong`` dataclass."""
-    from music21 import harmony, tempo as t_mod
-    from music21.expressions import RehearsalMark
-    from music21.layout import SystemLayout
+    from music21 import tempo as t_mod
 
     warnings: list[str] = []
 
