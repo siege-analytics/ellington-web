@@ -34,3 +34,4 @@ reportlab[renderpm]
 reportlab[pycairo]
 scikit-learn
 pyRealParser==0.1.0
+music21>=9.9.0,<10
