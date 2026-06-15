@@ -25,7 +25,32 @@ free of any one format's quirks.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+
+# Canonical ordering of chord-alteration tokens. iRealPro preserves
+# input order in its chord strings; music21 emits modifications in
+# ChordStepModifications iteration order; neither is stable. The
+# comparator's chord_symbol equality breaks if the SAME altered chord
+# canonicalizes differently depending on which dialect wrote it
+# (``C7b9#5`` vs ``C7#5b9``). We re-emit alterations in a fixed
+# canonical order, ascending by degree with flat before sharp at the
+# same degree — the jazz lead-sheet convention.
+_ALTERATION_TOKEN_RE = re.compile(
+    r"(?:b5|\#5|b9|\#9|\#11|b13|alt|add9|add2)"
+)
+_ALTERATION_SORT_KEY: dict[str, tuple[int, int]] = {
+    # (degree, accidental_rank — flat=0, sharp=1)
+    "b5":   (5, 0),
+    "#5":   (5, 1),
+    "b9":   (9, 0),
+    "#9":   (9, 1),
+    "#11":  (11, 1),
+    "b13":  (13, 0),
+    "alt":  (99, 0),   # umbrella "alt" goes last
+    "add9": (90, 0),   # add-tones after alterations, before alt
+    "add2": (90, 1),
+}
 
 
 @dataclass(frozen=True)
@@ -72,6 +97,38 @@ def canonical_root(raw_root: str) -> str:
     )
 
 
+def canonical_alterations(alterations: str) -> str:
+    """Re-emit a chord-alteration suffix in canonical jazz order.
+
+    Conventional jazz lead-sheet order is ascending by degree, with
+    flat before sharp at the same degree (``b5#5``, ``b9#9``,
+    ``#11``, ``b13``, then ``add9`` / ``add2``, then the umbrella
+    ``alt``). Unknown tokens stay at the end in input order so the
+    comparator-relevant canonical doesn't silently drop them, but
+    they're tracked separately so they sort after recognized tokens.
+
+    The input alterations string is whatever the adapter accumulated;
+    we extract recognized tokens, sort, and emit. Garbage between
+    tokens (e.g. mismatched parens) is preserved verbatim at the end
+    so adapter bugs don't get silently masked.
+    """
+    if not alterations:
+        return ""
+    recognized: list[str] = []
+    pos = 0
+    leftover: list[str] = []
+    while pos < len(alterations):
+        m = _ALTERATION_TOKEN_RE.match(alterations, pos)
+        if m:
+            recognized.append(m.group(0))
+            pos = m.end()
+        else:
+            leftover.append(alterations[pos])
+            pos += 1
+    recognized.sort(key=lambda tok: _ALTERATION_SORT_KEY.get(tok, (100, 0)))
+    return "".join(recognized) + "".join(leftover)
+
+
 def canonicalize_chord_parts(
     *,
     root: str,
@@ -100,7 +157,8 @@ def canonicalize_chord_parts(
     canon_bass = canonical_root(bass) if bass else None
     if canon_bass == canon_root:
         canon_bass = None
-    canonical = canon_root + quality + alterations
+    canon_alterations = canonical_alterations(alterations)
+    canonical = canon_root + quality + canon_alterations
     return NormalizedChord(
         canonical=canonical,
         raw=raw or canonical,
@@ -110,6 +168,7 @@ def canonicalize_chord_parts(
 
 __all__ = [
     "NormalizedChord",
+    "canonical_alterations",
     "canonical_root",
     "canonicalize_chord_parts",
 ]

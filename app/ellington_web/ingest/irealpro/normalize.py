@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 
-from ..charts_common.normalize import NormalizedChord
+from ..charts_common.normalize import NormalizedChord, canonical_alterations
 
 # iRealPro quality token → canonical quality token.
 # Order matters: longer keys must be tried before shorter prefixes
@@ -146,7 +146,10 @@ def normalize_chord_symbol(raw: str) -> NormalizedChord:
             warning=f"unrecognized quality token after root in {raw!r}",
         )
 
-    alterations = rest
+    # Route alterations through the shared canonicalizer so multi-alt
+    # chords have a stable ordering regardless of how iRealPro wrote
+    # them (e.g. ``b9#5`` and ``#5b9`` both → ``b9#5``).
+    alterations = canonical_alterations(rest)
     canonical = root + quality_canon + alterations
     return NormalizedChord(canonical=canonical, raw=raw, bass=bass)
 

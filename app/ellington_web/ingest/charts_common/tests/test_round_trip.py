@@ -54,10 +54,22 @@ PARITY_CHORDS: list[tuple[str, str, str, str | None]] = [
     ("C7#9", "C7#9", "C7#9", None),
     ("C7b5", "C7b5", "C7b5", None),
     ("C7#5", "C7#5", "C7#5", None),
-    # Multi-alteration ordering stability: b9 + b5 must come out in
-    # the same order on both adapters, else the comparator's
-    # chord_symbol equality misses.
-    ("C7b9b5", "C7b9b5", "C7b9b5", None),
+    # Multi-alteration ordering stability: canonical_alterations()
+    # re-emits in fixed jazz-lead-sheet order (ascending degree, then
+    # flat before sharp at the same degree). The same chord written
+    # with alterations in different input order must produce the
+    # SAME canonical regardless — that's the contract the comparator
+    # depends on, and the regression risk #76's refactor would hit
+    # if the parity test doesn't pin it.
+    ("C7b9b5", "C7b9b5", "C7b5b9", None),  # input order: b9 then b5
+    ("C7b5b9", "C7b5b9", "C7b5b9", None),  # input order: b5 then b9 — same canonical
+    ("C7b9#5", "C7b9#5", "C7#5b9", None),  # b9 + #5 normalize to #5 first (degree 5 first)
+    ("C7#5b9", "C7#5b9", "C7#5b9", None),  # already-canonical input — stays put
+    # min-maj7 family: iRealPro writes -^7, music21 understands mM7
+    # (m-maj7 specifically rejects in 9.x parser). The canonical
+    # ``m-maj7`` is where both adapters meet. This is the family
+    # where the parsers most often diverge in the wild — pinning it.
+    ("C-^7", "CmM7", "Cm-maj7", None),
     # Slash chords — bass preserved separately from the canonical.
     ("C/G", "C/G", "C", "G"),
     ("Bb7/F", "B-7/F", "Bb7", "F"),
