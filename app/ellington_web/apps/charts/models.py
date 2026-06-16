@@ -409,10 +409,19 @@ class ChartImport(models.Model):
             # Per-user idempotency: re-uploading the same PDF SHA as
             # the same user reuses the existing ChartImport. Different
             # users uploading the same PDF each get their own.
-            # ``condition`` excludes orphan rows (user=NULL after the
-            # uploader's account is deleted) — the constraint shouldn't
-            # block another live user from re-uploading the same PDF
-            # just because a deleted account once did.
+            #
+            # The ``condition`` is doing TWO jobs:
+            #   1. Logical: exclude orphan rows (user=NULL after the
+            #      uploader's account is deleted) so the constraint
+            #      doesn't block another live user from re-uploading
+            #      the same PDF.
+            #   2. Engine-portability: Postgres treats NULL ≠ NULL in
+            #      unique constraints (multiple (NULL, sha) rows would
+            #      land without the condition); SQLite treats NULL =
+            #      NULL and would reject the second orphan. Removing
+            #      this condition because "Postgres handles NULL fine"
+            #      will silently break the test runner on SQLite.
+            #      Keep it.
             models.UniqueConstraint(
                 fields=["user", "file_ref"],
                 condition=models.Q(user__isnull=False),
