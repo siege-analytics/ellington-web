@@ -35,3 +35,9 @@ reportlab[pycairo]
 scikit-learn
 pyRealParser==0.1.0
 music21>=9.9.0,<10
+# omr-leadsheet — Phase 4-PDF Python OMR pipeline (#70/#81).
+# Installed from GitHub until 1.0.0 lands on PyPI. The Python deps
+# (music21, pillow, matplotlib, typer) come in via this; the system
+# deps (Audiveris, MuseScore, Tesseract, Poppler, ImageMagick) are
+# the worker image's responsibility, not pip's.
+omr-leadsheet @ git+https://github.com/dheerajchand/omr-leadsheet.git@ced92abc0226e5d7ad4a539e1607e2c1ad2c959f
