@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -109,6 +110,7 @@ def run_one_pdf(
     workspace_dir: Path,
     *,
     with_oemer: bool = False,
+    force: bool = False,
 ) -> OmrOutcome:
     """Run omr-leadsheet's ``process()`` over one PDF.
 
@@ -124,6 +126,15 @@ def run_one_pdf(
     ``with_oemer`` enables omr-leadsheet's second-engine OMR fallback;
     defaults off because oemer is a heavy optional dependency. The
     task layer can flip this from settings if/when we want it.
+
+    ``force=True`` makes omr-leadsheet re-run every cached stage from
+    scratch. The Celery task layer flips this on retry (see #85
+    plugin-agent review CRITICAL) because omr-leadsheet's cache is
+    naive ``if file.is_file(): skip`` with no atomic-write discipline:
+    a worker crash mid-pipeline leaves partial intermediate files
+    that the next retry would treat as cached. ``force=True``
+    guarantees we re-derive everything when we know the prior run
+    didn't complete cleanly.
     """
     if not pdf_path.is_file():
         raise FileNotFoundError(f"pdf not found: {pdf_path}")
@@ -142,13 +153,25 @@ def run_one_pdf(
     process = _resolve_process_function()
 
     try:
-        mscz_path = process(config, staged_pdf, with_oemer=with_oemer)
+        mscz_path = process(
+            config, staged_pdf, force=force, with_oemer=with_oemer
+        )
     except FileNotFoundError as exc:
         # omr-leadsheet raises FileNotFoundError when the input PDF
         # vanishes mid-run (unlikely but possible) — preserve the
         # cause for the operator log.
         raise OmrPipelineFailure(
             f"omr-leadsheet could not find an input file: {exc}"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        # omr-leadsheet's process.py calls subprocess with timeout=
+        # on Audiveris (600s) + MuseScore + pdftoppm. TimeoutExpired
+        # is NOT a RuntimeError; without explicit handling here it
+        # leaks past run_one_pdf AND past the task-level catch,
+        # leaving ChartImport stuck at RUNNING forever. Plugin-agent
+        # #85 review HIGH.
+        raise OmrPipelineFailure(
+            f"omr-leadsheet subprocess timed out: {exc}"
         ) from exc
     except RuntimeError as exc:
         # OMR-at-both-DPIs failure, MuseScore export failure, etc.
@@ -203,27 +226,33 @@ def _build_config(workspace_dir: Path):
     """
     from omr_leadsheet.config import Config
 
-    audiveris = Path(
-        getattr(
-            settings,
-            "ELLINGTON_OMR_AUDIVERIS_BIN",
-            "/Applications/Audiveris.app/Contents/MacOS/Audiveris",
+    # No platform-hardcoded defaults — the production deployment is
+    # Linux containers, not macOS dev machines. Requiring explicit
+    # settings forces the operator to wire the paths in their
+    # environment instead of getting a confusing FileNotFoundError
+    # from Audiveris ten minutes into the first OMR run.
+    # Plugin-agent #85 review MEDIUM.
+    audiveris_setting = getattr(settings, "ELLINGTON_OMR_AUDIVERIS_BIN", None)
+    mscore_setting = getattr(settings, "ELLINGTON_OMR_MSCORE_BIN", None)
+    style_setting = getattr(settings, "ELLINGTON_OMR_STYLE_FILE", None)
+    if not audiveris_setting or not mscore_setting or not style_setting:
+        missing = [
+            name
+            for name, value in [
+                ("ELLINGTON_OMR_AUDIVERIS_BIN", audiveris_setting),
+                ("ELLINGTON_OMR_MSCORE_BIN", mscore_setting),
+                ("ELLINGTON_OMR_STYLE_FILE", style_setting),
+            ]
+            if not value
+        ]
+        raise OmrLeadsheetNotInstalled(
+            f"Phase 4-PDF settings missing: {', '.join(missing)}. "
+            "Set these in the Celery worker's environment to point at "
+            "Audiveris, MuseScore, and the .mss style file."
         )
-    )
-    mscore = Path(
-        getattr(
-            settings,
-            "ELLINGTON_OMR_MSCORE_BIN",
-            "/Applications/MuseScore 4.app/Contents/MacOS/mscore",
-        )
-    )
-    style = Path(
-        getattr(
-            settings,
-            "ELLINGTON_OMR_STYLE_FILE",
-            str(Path.home() / "Documents" / "MuseScore4" / "Styles" / "MyStyle.mss"),
-        )
-    )
+    audiveris = Path(audiveris_setting)
+    mscore = Path(mscore_setting)
+    style = Path(style_setting)
 
     return Config(
         book_dir=workspace_dir,

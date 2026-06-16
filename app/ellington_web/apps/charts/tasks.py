@@ -36,9 +36,11 @@ from pathlib import Path
 
 from celery import shared_task
 from django.conf import settings
+from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
-from .models import ChartImport, ChartImportStatus
+from .models import ChartImport, ChartImportStatus, ImportSource
 from .omr import (
     OmrLeadsheetError,
     OmrLeadsheetNotInstalled,
@@ -65,23 +67,66 @@ def process_pdf_chart(self, chart_import_id: int) -> dict:
     Returns a dict with the final status + counts for the Celery
     result store; the canonical state is on the ChartImport row.
 
-    Idempotency: a ChartImport in RUNNING when the worker picks it up
-    (e.g. a redelivered message after a worker crash) does NOT loop —
-    the orchestrator re-runs cleanly because omr-leadsheet's own
-    caching skips already-done stages. If we ever see a redelivery
-    storm we can add a worker-fence here; for v1 the cost of one
-    redundant run is acceptable.
+    Retry safety: when the Celery framework redelivers this task
+    (worker crash, ack timeout, redelivery storm), we pass
+    ``force=True`` to ``run_one_pdf`` if ``self.request.retries > 0``.
+    The reason: omr-leadsheet's per-stage cache is naive
+    ``if file.is_file(): skip`` with no atomic-write discipline on
+    intermediates. A worker crash mid-pipeline leaves partial cache
+    files that the next retry would silently consume — producing the
+    same wrong output a week after deploy. ``force=True`` guarantees
+    we re-derive everything when we know the prior attempt didn't
+    finish cleanly. Plugin-agent #85 review CRITICAL.
+
+    A concurrent dispatch precondition guards against two workers
+    promoting the same row out of QUEUED — see the ``.update()`` call
+    below; the loser exits with ``status: skipped``.
     """
+    # Atomic RUNNING flip with a precondition: only this worker can
+    # promote a ChartImport out of QUEUED. Two workers picking up a
+    # redelivered message can't both proceed — the second update()
+    # returns 0 rows and we bail. Plugin-agent #85 review MEDIUM.
+    promoted = (
+        ChartImport.objects.filter(
+            pk=chart_import_id,
+            status__in=(
+                ChartImportStatus.QUEUED,
+                ChartImportStatus.PENDING,
+                # Retry from a prior RUNNING is allowed — Celery's own
+                # acks_late or worker_lost_wait can redeliver after a
+                # crash; we want to re-run, not get stuck.
+                ChartImportStatus.RUNNING,
+            ),
+        ).update(
+            status=ChartImportStatus.RUNNING,
+            # Clear stale error_log from a prior FAILED run before
+            # re-attempting. Without this, a successful retry would
+            # leave the original failure visible to the operator.
+            # Plugin-agent #85 review MEDIUM.
+            error_log={},
+            pages_succeeded=0,
+            pages_failed=0,
+        )
+    )
+    if promoted == 0:
+        _log.warning(
+            "process_pdf_chart: ChartImport %s not in QUEUED/PENDING/RUNNING "
+            "(probably claimed by another worker or already terminal)",
+            chart_import_id,
+        )
+        # Fetch the row to surface the real status to the result store
+        try:
+            current = ChartImport.objects.only("status").get(pk=chart_import_id)
+            return {"status": "skipped", "current_status": current.status,
+                    "chart_import_id": chart_import_id}
+        except ChartImport.DoesNotExist:
+            return {"status": "not-found", "chart_import_id": chart_import_id}
+
     try:
         chart_import = ChartImport.objects.get(pk=chart_import_id)
     except ChartImport.DoesNotExist:
         _log.warning("process_pdf_chart: ChartImport %s not found", chart_import_id)
         return {"status": "not-found", "chart_import_id": chart_import_id}
-
-    # Mark RUNNING immediately so the view layer's "what's in flight?"
-    # query is accurate during the multi-minute omr-leadsheet run.
-    chart_import.status = ChartImportStatus.RUNNING
-    chart_import.save(update_fields=["status"])
 
     pdf_path = _resolve_pdf_path(chart_import.file_ref)
     if not pdf_path.is_file():
@@ -92,8 +137,13 @@ def process_pdf_chart(self, chart_import_id: int) -> dict:
         )
 
     workspace_dir = _workspace_dir(chart_import_id)
+    # ``force=True`` on retry: omr-leadsheet caches by ``file.is_file()``
+    # with no atomic-write discipline on intermediates. A worker crash
+    # mid-pipeline leaves partial cache files the next retry would
+    # silently consume. Plugin-agent #85 review CRITICAL.
+    retries = getattr(self.request, "retries", 0) if hasattr(self, "request") else 0
     try:
-        outcome = run_one_pdf(pdf_path, workspace_dir)
+        outcome = run_one_pdf(pdf_path, workspace_dir, force=retries > 0)
     except OmrLeadsheetNotInstalled as exc:
         # Infra-shaped failure — operator needs to pip install
         # omr-leadsheet, not debug the pipeline. Surface distinctly
@@ -233,14 +283,20 @@ def _ingest_outcome(
             message=f"musescore ingest failed: {exc}",
         )
 
-    # Backfill the ChartImport ↔ Song reverse link. The ingest layer
-    # doesn't know about ChartImport (Phase 4-MS predates it); we
-    # tag every Song the import touched here.
+    # Backfill the ChartImport ↔ Song reverse link. The ingest
+    # layer's ImportSummary now carries the touched Song PKs (added
+    # in this commit to ingest.musescore.importer). Plugin-agent #85
+    # review HIGH: filtering by ``songbook__slug`` painted every Song
+    # in the songbook with the new import_run FK, including
+    # pre-existing Songs the importer never touched. The set returned
+    # by the importer is the only correct scope.
     from .models import Song
 
-    Song.objects.filter(songbook__slug=songbook_slug).update(
-        import_run=chart_import,
-    )
+    if summary.touched_song_pks:
+        Song.objects.filter(pk__in=summary.touched_song_pks).update(
+            import_run=chart_import,
+            import_source=ImportSource.OMR_PDF,
+        )
 
     chart_import.page_count = 1
     chart_import.pages_succeeded = 1
@@ -253,12 +309,34 @@ def _ingest_outcome(
     chart_import.status = ChartImportStatus.COMPLETE
     chart_import.completed_at = timezone.now()
     chart_import.save()
+    # Clean up workspace unless the operator wants to keep it for
+    # debugging. FAILED workspaces are NEVER cleaned (those are the
+    # ones an operator actually wants to inspect post-mortem).
+    # Plugin-agent #85 review MEDIUM.
+    if not getattr(settings, "ELLINGTON_OMR_KEEP_WORKSPACE_ON_COMPLETE", False):
+        _cleanup_workspace(chart_import.pk)
     return {
         "status": ChartImportStatus.COMPLETE,
         "songs_created": summary.songs_created,
         "songs_updated": summary.songs_updated,
         "chart_import_id": chart_import.pk,
     }
+
+
+def _cleanup_workspace(chart_import_id: int) -> None:
+    """Remove the per-ChartImport workspace dir.
+
+    Safe to call multiple times; absent workspace is a no-op.
+    Logged but swallowed on failure — leaving a stale dir is better
+    than crashing the task at the very end of a successful run.
+    """
+    workspace = _workspace_dir(chart_import_id)
+    try:
+        shutil.rmtree(workspace)
+    except OSError as exc:
+        _log.warning(
+            "_cleanup_workspace: could not remove %s: %r", workspace, exc
+        )
 
 
 def _fail(

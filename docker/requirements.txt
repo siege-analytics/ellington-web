@@ -40,4 +40,10 @@ music21>=9.9.0,<10
 # (music21, pillow, matplotlib, typer) come in via this; the system
 # deps (Audiveris, MuseScore, Tesseract, Poppler, ImageMagick) are
 # the worker image's responsibility, not pip's.
+#
+# The dheerajchand/omr-leadsheet repo IS the canonical upstream — it
+# is not a fork. (Plugin-agent #85 review NIT assumed a
+# siege-analytics/omr-leadsheet existed; it doesn't.) If we ever
+# split a siege-analytics fork for org-owned releases, bump this
+# URL then.
 omr-leadsheet @ git+https://github.com/dheerajchand/omr-leadsheet.git@ced92abc0226e5d7ad4a539e1607e2c1ad2c959f

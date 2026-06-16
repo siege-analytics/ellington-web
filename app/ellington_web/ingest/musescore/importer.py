@@ -46,6 +46,12 @@ class ImportSummary:
     measures_written: int = 0
     chord_events_written: int = 0
     warnings: list[str] = field(default_factory=list)
+    # PKs of the Song rows this import call touched (created OR
+    # updated). Used by Phase 4-PDF's Celery task (#81) to backfill
+    # ``Song.import_run`` without painting unrelated Songs in the
+    # same songbook. The set semantics here keep the call site free
+    # of de-dup logic.
+    touched_song_pks: set[int] = field(default_factory=set)
 
     def as_table_rows(self) -> list[tuple[str, str]]:
         return [
@@ -152,6 +158,7 @@ def _import_one_song(
             "import_source": ImportSource.MUSESCORE,
         },
     )
+    summary.touched_song_pks.add(song.pk)
     if created:
         summary.songs_created += 1
     else:
