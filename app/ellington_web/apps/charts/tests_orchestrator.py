@@ -62,6 +62,13 @@ def _unique_media_root(label: str) -> str:
     return f"/tmp/ellington-test-media-{label}-{uuid.uuid4().hex[:8]}"
 
 
+# Module-level scratch path used by the retry-allows-running test,
+# which can't use the class-scoped setUpClass override (it needs the
+# override_settings context manager around the mocked run because
+# request.retries is patched at the same time).
+MEDIA_ROOT_RACE_STR = _unique_media_root("race")
+
+
 def _chart_import(
     *,
     songbook: Songbook | None = None,
@@ -368,6 +375,68 @@ class TestRunningPrecondition(TestCase):
         result = process_pdf_chart(ci.pk)
         self.assertEqual(result["status"], "skipped")
         self.assertEqual(result["current_status"], ChartImportStatus.CANCELED)
+
+    def test_first_delivery_loser_when_row_already_running(self) -> None:
+        """Concurrent-dispatch race: worker B (first delivery) sees RUNNING and bails.
+
+        Plugin-agent #85 third-pass review MEDIUM: the original
+        precondition included RUNNING in the allowed_prior set,
+        which let two first-delivery workers BOTH promote the row
+        out of QUEUED → RUNNING → both proceed. With the
+        retries-aware precondition, worker B (retries=0) requires
+        QUEUED/PENDING and bails on RUNNING.
+        """
+        ci = _chart_import(file_ref=f"pdf_upload/{uuid.uuid4().hex}.pdf")
+        # Worker A has already flipped the row to RUNNING; worker B
+        # arrives next (first delivery, retries=0). Simulate by
+        # leaving the row in RUNNING.
+        ci.status = ChartImportStatus.RUNNING
+        ci.save(update_fields=["status"])
+        # Default `process_pdf_chart.request` has retries=0
+        result = process_pdf_chart(ci.pk)
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["current_status"], ChartImportStatus.RUNNING)
+
+    def test_retry_delivery_promotes_running_row(self) -> None:
+        """Celery retry (``self.request.retries > 0``) DOES allow RUNNING.
+
+        The acks_late / worker_lost_wait recovery path needs to be
+        able to re-run a row that's stuck at RUNNING after a worker
+        crash. The retries-aware precondition allows it.
+        """
+        from pathlib import Path as _Path
+
+        ci = _chart_import(file_ref=f"pdf_upload/{uuid.uuid4().hex}.pdf")
+        ci.status = ChartImportStatus.RUNNING
+        ci.save(update_fields=["status"])
+        # Stage the PDF so the orchestrator gets past the existence check
+        media_root = _Path(MEDIA_ROOT_RACE_STR)
+        media_root.mkdir(parents=True, exist_ok=True)
+        _make_pdf_file(media_root, ci.file_ref)
+        workspace = media_root / f"ws-retry-{ci.pk}"
+        mscz = _make_mscz_file(workspace)
+        with override_settings(MEDIA_ROOT=MEDIA_ROOT_RACE_STR):
+            with mock.patch(
+                "apps.charts.tasks.run_one_pdf",
+                return_value=OmrOutcome(mscz_path=mscz),
+            ), mock.patch(
+                "apps.charts.tasks._workspace_dir", return_value=workspace
+            ), mock.patch(
+                "apps.charts.tasks.parse_path", return_value=[]
+            ), mock.patch(
+                "apps.charts.tasks.import_parsed_songs",
+                return_value=mock.Mock(
+                    songs_created=1, songs_updated=0,
+                    warnings=[], touched_song_pks=set(),
+                ),
+            ):
+                # Simulate Celery setting retries=1 on the redelivery
+                fake_request = mock.Mock(retries=1)
+                with mock.patch.object(
+                    process_pdf_chart, "request", fake_request, create=True
+                ):
+                    result = process_pdf_chart(ci.pk)
+        self.assertEqual(result["status"], ChartImportStatus.COMPLETE)
 
 
 class TestDispatchPdfChart(TestCase):

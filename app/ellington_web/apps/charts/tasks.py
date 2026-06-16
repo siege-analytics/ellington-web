@@ -82,21 +82,35 @@ def process_pdf_chart(self, chart_import_id: int) -> dict:
     promoting the same row out of QUEUED — see the ``.update()`` call
     below; the loser exits with ``status: skipped``.
     """
-    # Atomic RUNNING flip with a precondition: only this worker can
-    # promote a ChartImport out of QUEUED. Two workers picking up a
-    # redelivered message can't both proceed — the second update()
-    # returns 0 rows and we bail. Plugin-agent #85 review MEDIUM.
+    # Atomic RUNNING flip with a precondition that distinguishes two
+    # different "this is a retry" scenarios:
+    #
+    #   1. First delivery (``self.request.retries == 0``): the row
+    #      must be in QUEUED/PENDING. Including RUNNING here would
+    #      defeat the concurrent-dispatch race fix — two workers
+    #      both first-delivering for the same row would both find
+    #      it in RUNNING after the first promotes, and both would
+    #      proceed. Plugin-agent #85 third-pass review MEDIUM.
+    #   2. Celery retry (``self.request.retries > 0``): the row may
+    #      legitimately still be RUNNING — the previous attempt
+    #      crashed before flipping to a terminal state, and we want
+    #      to recover, not bail. ``acks_late`` + worker_lost_wait
+    #      paths land here.
+    #
+    # Encoding the distinction in the SQL precondition keeps the
+    # race fix and the recovery story self-documenting.
+    retries = (
+        getattr(self.request, "retries", 0)
+        if hasattr(self, "request") and self.request is not None
+        else 0
+    )
+    allowed_prior = (ChartImportStatus.QUEUED, ChartImportStatus.PENDING)
+    if retries > 0:
+        allowed_prior = (*allowed_prior, ChartImportStatus.RUNNING)
     promoted = (
         ChartImport.objects.filter(
             pk=chart_import_id,
-            status__in=(
-                ChartImportStatus.QUEUED,
-                ChartImportStatus.PENDING,
-                # Retry from a prior RUNNING is allowed — Celery's own
-                # acks_late or worker_lost_wait can redeliver after a
-                # crash; we want to re-run, not get stuck.
-                ChartImportStatus.RUNNING,
-            ),
+            status__in=allowed_prior,
         ).update(
             status=ChartImportStatus.RUNNING,
             # Clear stale error_log from a prior FAILED run before
@@ -110,9 +124,12 @@ def process_pdf_chart(self, chart_import_id: int) -> dict:
     )
     if promoted == 0:
         _log.warning(
-            "process_pdf_chart: ChartImport %s not in QUEUED/PENDING/RUNNING "
-            "(probably claimed by another worker or already terminal)",
+            "process_pdf_chart: ChartImport %s precondition failed "
+            "(retries=%d; allowed_prior=%s) — probably claimed by another "
+            "worker or already terminal",
             chart_import_id,
+            retries,
+            allowed_prior,
         )
         # Fetch the row to surface the real status to the result store
         try:
@@ -141,7 +158,8 @@ def process_pdf_chart(self, chart_import_id: int) -> dict:
     # with no atomic-write discipline on intermediates. A worker crash
     # mid-pipeline leaves partial cache files the next retry would
     # silently consume. Plugin-agent #85 review CRITICAL.
-    retries = getattr(self.request, "retries", 0) if hasattr(self, "request") else 0
+    # ``retries`` was computed at the top of the function for the
+    # precondition; reuse it here.
     try:
         outcome = run_one_pdf(pdf_path, workspace_dir, force=retries > 0)
     except OmrLeadsheetNotInstalled as exc:
