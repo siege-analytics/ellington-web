@@ -4,22 +4,30 @@ Covers the model-level contracts the upcoming orchestrator (#81) and
 view layer (#82) will rely on:
 
 - Status state machine: enum values are exactly what the lifecycle
-  expects (no skips, no unexpected terminals).
+  expects (no skips, no unexpected terminals). CANCELED added per
+  PR #83 review for practitioner-initiated revoke.
 - ``COMPLETE`` vs ``PARTIAL`` vs ``FAILED`` resolution rule based on
   ``pages_succeeded`` / ``pages_failed`` (the orchestrator in #81
   reads this back; pinning it here means a future refactor of the
   resolution logic has to match).
-- Idempotency: ``file_ref`` unique constraint prevents duplicate
-  uploads of the same SHA-256-keyed PDF.
+- Idempotency: ``(user, file_ref)`` unique constraint enforces
+  per-user idempotency (NOT global — two practitioners legitimately
+  upload the same Real Book scan).
 - Reverse relation: ``chart_import.songs`` returns extracted Songs.
-- Cascade behavior: deleting a ChartImport sets ``Song.import_run = NULL``
-  rather than cascade-deleting the Songs (which may be referenced by
-  PracticeSessions).
+- Cascade behavior:
+  - Deleting a ChartImport sets ``Song.import_run = NULL``.
+  - Deleting a User SETs NULL on ChartImport.user (preserves audit
+    trail per the plugin-agent #83 review).
+  - Deleting a Songbook SETs NULL on ChartImport.source_songbook.
 - ``error_log`` JSON shape: the upload view + admin read this in a
   per-page form; the schema lives here.
+- Index existence: composite index for the per-user list view.
+- OMR_PDF choice in ImportSource is wired.
 """
 
 from __future__ import annotations
+
+import uuid
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -34,12 +42,20 @@ from apps.charts.models import (
 )
 
 
-def _user(name: str = "alice"):
-    return get_user_model().objects.create_user(name, password="pw")
+def _user(label: str = "u"):
+    # Unique-suffix the username so parallel test runs and per-class
+    # setUp don't collide on a duplicate-User IntegrityError. Plugin
+    # agent flagged the bare-name version on #83 review.
+    return get_user_model().objects.create_user(
+        f"{label}-{uuid.uuid4().hex[:8]}", password="pw"
+    )
 
 
-def _songbook(slug: str = "omr-imports") -> Songbook:
-    return Songbook.objects.create(slug=slug, title=slug)
+def _songbook(slug: str | None = None) -> Songbook:
+    return Songbook.objects.create(
+        slug=slug or f"sb-{uuid.uuid4().hex[:8]}",
+        title="Test Songbook",
+    )
 
 
 class TestChartImportStatusEnum(TestCase):
@@ -51,18 +67,33 @@ class TestChartImportStatusEnum(TestCase):
         self.assertEqual(ChartImportStatus.RUNNING, "running")
         self.assertEqual(ChartImportStatus.COMPLETE, "complete")
         self.assertEqual(ChartImportStatus.PARTIAL, "partial")
+        self.assertEqual(ChartImportStatus.CANCELED, "canceled")
         self.assertEqual(ChartImportStatus.FAILED, "failed")
 
     def test_no_unexpected_states_added(self) -> None:
         # If a contributor adds a status without updating the state
         # machine docs + #81 orchestrator + #82 view, this fails noisily.
         expected = {
-            "pending", "queued", "running", "complete", "partial", "failed"
+            "pending",
+            "queued",
+            "running",
+            "complete",
+            "partial",
+            "canceled",
+            "failed",
         }
         self.assertEqual(
             {v for v, _ in ChartImportStatus.choices},
             expected,
         )
+
+
+class TestImportSourceOmrPdf(TestCase):
+    """ImportSource has the OMR_PDF choice wired."""
+
+    def test_omr_pdf_choice_exists(self) -> None:
+        self.assertEqual(ImportSource.OMR_PDF, "omr-pdf")
+        self.assertIn("omr-pdf", {v for v, _ in ImportSource.choices})
 
 
 class TestChartImportCreation(TestCase):
@@ -88,14 +119,47 @@ class TestChartImportCreation(TestCase):
         self.assertIn("running", str(ci))
 
 
-class TestFileRefUniqueness(TestCase):
-    """Idempotency: identical PDF SHAs collide at the DB layer."""
+class TestFileRefPerUserUniqueness(TestCase):
+    """Idempotency scope is per-user, NOT global.
 
-    def test_duplicate_file_ref_raises(self) -> None:
-        ChartImport.objects.create(user=_user(), file_ref="sha-dup")
+    Two practitioners legitimately upload the same Real Book scan and
+    each gets their own ChartImport. The same user re-uploading the
+    same SHA reuses the existing row (idempotency).
+    """
+
+    def test_same_user_same_file_ref_collides(self) -> None:
+        u = _user()
+        ChartImport.objects.create(user=u, file_ref="sha-dup")
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                ChartImport.objects.create(user=_user("bob"), file_ref="sha-dup")
+                ChartImport.objects.create(user=u, file_ref="sha-dup")
+
+    def test_different_users_same_file_ref_both_succeed(self) -> None:
+        # Real Book scans are widely shared; per-user uniqueness is
+        # the right scope. Global uniqueness would leak existence
+        # info across users (plugin-agent #83 review HIGH).
+        u1 = _user("alice")
+        u2 = _user("bob")
+        ChartImport.objects.create(user=u1, file_ref="sha-shared")
+        # Different user, same file → must NOT raise
+        ChartImport.objects.create(user=u2, file_ref="sha-shared")
+        self.assertEqual(
+            ChartImport.objects.filter(file_ref="sha-shared").count(), 2
+        )
+
+    def test_null_user_same_file_ref_does_not_collide(self) -> None:
+        # The unique constraint is conditional on user__isnull=False, so
+        # orphan ChartImports (user deleted) don't block other live users
+        # from re-uploading the same PDF.
+        ChartImport.objects.create(user=None, file_ref="sha-orphan")
+        # Another null-user upload of the same SHA: allowed
+        ChartImport.objects.create(user=None, file_ref="sha-orphan")
+        self.assertEqual(
+            ChartImport.objects.filter(
+                user__isnull=True, file_ref="sha-orphan"
+            ).count(),
+            2,
+        )
 
 
 class TestSongReverseRelation(TestCase):
@@ -132,11 +196,12 @@ class TestSongReverseRelation(TestCase):
 
 
 class TestCascadeOnDelete(TestCase):
-    """Deleting a ChartImport SETS NULL on Songs, doesn't cascade-delete them.
+    """SET_NULL semantics on every FK on ChartImport + downstream Song.
 
-    Songs may already be referenced by a PracticeSession by the time
-    someone removes the original upload; we'd rather orphan the
-    import record than vaporize a practitioner's chart history.
+    Per plugin-agent #83 review HIGH: deleting a User must preserve
+    the audit trail (ChartImport survives with user=NULL); deleting a
+    Songbook must not vaporize the import record; deleting a
+    ChartImport sets Song.import_run = NULL.
     """
 
     def test_deleting_chart_import_nulls_song_import_run(self) -> None:
@@ -157,6 +222,33 @@ class TestCascadeOnDelete(TestCase):
         self.assertIsNone(s.import_run)
         # Song still exists — that's the whole point of SET_NULL
         self.assertTrue(Song.objects.filter(pk=s.pk).exists())
+
+    def test_deleting_user_nulls_chart_import_user(self) -> None:
+        # The audit trail is more valuable than the link back to a
+        # deleted account. Cascading the ChartImport would also
+        # cascade through Song.import_run → NULL, stripping
+        # provenance off Songs the deleted user contributed (Songs
+        # don't have a user FK; they're owned by the Songbook).
+        u = _user()
+        ci = ChartImport.objects.create(user=u, file_ref="sha-user-del")
+        ci_pk = ci.pk
+        u.delete()
+        ci.refresh_from_db()
+        self.assertIsNone(ci.user)
+        # ChartImport row still exists
+        self.assertTrue(ChartImport.objects.filter(pk=ci_pk).exists())
+
+    def test_deleting_songbook_nulls_source_songbook(self) -> None:
+        u = _user()
+        sb = _songbook()
+        ci = ChartImport.objects.create(
+            user=u, file_ref="sha-sb-del", source_songbook=sb
+        )
+        sb.delete()
+        ci.refresh_from_db()
+        self.assertIsNone(ci.source_songbook)
+        # ChartImport row still exists
+        self.assertTrue(ChartImport.objects.filter(pk=ci.pk).exists())
 
 
 class TestPageCountInvariants(TestCase):
@@ -218,6 +310,32 @@ class TestErrorLogShape(TestCase):
     def test_error_log_defaults_to_empty_dict(self) -> None:
         ci = ChartImport.objects.create(user=_user(), file_ref="sha-empty")
         self.assertEqual(ci.error_log, {})
+
+    def test_error_log_accepts_arbitrary_shape_without_crash(self) -> None:
+        # JSONField doesn't validate shape — that's by design (#81's
+        # orchestrator owns the schema). Test that the model layer
+        # doesn't choke on unexpected shapes, so an orchestrator bug
+        # surfaces visibly in the view layer rather than as an
+        # opaque save() failure.
+        for payload in [
+            [],
+            ["not a dict"],
+            {"unexpected_key": True},
+            {"page_warnings": "not a dict"},
+        ]:
+            ChartImport.objects.create(
+                user=_user(),
+                file_ref=f"sha-shape-{uuid.uuid4().hex[:8]}",
+                error_log=payload,
+            )
+
+
+class TestIndexes(TestCase):
+    """The composite (user, -created_at) index exists for the list view."""
+
+    def test_user_recent_index_present(self) -> None:
+        idx_names = {idx.name for idx in ChartImport._meta.indexes}
+        self.assertIn("chartimport_user_recent_idx", idx_names)
 
 
 class TestCeleryQueueRoute(TestCase):

@@ -107,4 +107,18 @@ class ChartImportAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "source_songbook")
     search_fields = ("file_ref", "user__username")
-    readonly_fields = ("created_at", "completed_at", "task_id", "file_ref")
+    # Every field the orchestrator writes is read-only in admin —
+    # hand-editing a ChartImport's page-bookkeeping / error_log /
+    # status mid-run would race the worker. Operators clear stuck
+    # imports by deleting + re-uploading, not by editing.
+    readonly_fields = (
+        "created_at",
+        "completed_at",
+        "task_id",
+        "file_ref",
+        "status",
+        "page_count",
+        "pages_succeeded",
+        "pages_failed",
+        "error_log",
+    )

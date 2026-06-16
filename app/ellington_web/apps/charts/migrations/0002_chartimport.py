@@ -2,15 +2,27 @@
 
 Adds:
     - ChartImport model (multi-page PDF → N Songs in one Songbook)
-    - ChartImportStatus enum values (PENDING/QUEUED/RUNNING/COMPLETE/PARTIAL/FAILED)
+    - ChartImportStatus enum values (PENDING/QUEUED/RUNNING/COMPLETE/PARTIAL/CANCELED/FAILED)
     - ImportSource.OMR_PDF choice on Song.import_source
     - Song.import_run FK → ChartImport (null, SET_NULL)
     - Composite index on (user, -created_at) for the per-user list view
+    - UniqueConstraint on (user, file_ref) for per-user idempotency
 
 Per Q1/Q2/Q3 decisions on #70 (see issue comment 4712606705):
     Q1 — Python orchestrator (subprocess only for Audiveris JVM)
     Q2 — Keep PDF on disk at MEDIA_ROOT/pdf_upload/{sha256}.pdf
     Q3 — Multi-page from v1; one PDF → N Songs in one Songbook
+
+Plugin-agent hostile-review on PR #83 corrections (squashed inline
+before merge — this migration has not deployed anywhere yet):
+    - user FK is SET_NULL not CASCADE (preserves audit trail when an
+      uploader's account is deleted; cascading would orphan Song
+      provenance)
+    - file_ref unique scope is per-user not global (two practitioners
+      legitimately upload the same Real Book scan; global uniqueness
+      would IntegrityError and leak existence info across users)
+    - CANCELED added to status enum (practitioner-initiated revoke is
+      distinct from FAILED runtime crashes)
 """
 
 from __future__ import annotations
@@ -45,7 +57,6 @@ class Migration(migrations.Migration):
                     models.CharField(
                         help_text="Content-addressed path (SHA-256) of the source PDF.",
                         max_length=255,
-                        unique=True,
                     ),
                 ),
                 (
@@ -57,6 +68,7 @@ class Migration(migrations.Migration):
                             ("running", "Running"),
                             ("complete", "Complete"),
                             ("partial", "Partial (some pages failed)"),
+                            ("canceled", "Canceled by user"),
                             ("failed", "Failed"),
                         ],
                         default="pending",
@@ -84,8 +96,13 @@ class Migration(migrations.Migration):
                 (
                     "user",
                     models.ForeignKey(
-                        help_text="The practitioner who uploaded the PDF.",
-                        on_delete=django.db.models.deletion.CASCADE,
+                        blank=True,
+                        help_text=(
+                            "The practitioner who uploaded the PDF; "
+                            "null if that user has since been deleted."
+                        ),
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
                         related_name="chart_imports",
                         to=settings.AUTH_USER_MODEL,
                     ),
@@ -94,6 +111,14 @@ class Migration(migrations.Migration):
             options={
                 "ordering": ["-created_at"],
             },
+        ),
+        migrations.AddConstraint(
+            model_name="chartimport",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("user__isnull", False)),
+                fields=("user", "file_ref"),
+                name="chartimport_user_file_ref_unique",
+            ),
         ),
         migrations.AddIndex(
             model_name="chartimport",

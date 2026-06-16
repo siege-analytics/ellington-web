@@ -47,19 +47,28 @@ class ImportSource(models.TextChoices):
 class ChartImportStatus(models.TextChoices):
     """Lifecycle of a multi-page PDF chart import.
 
-    Mirrors the Recording.analysis_status shape from #67/#69 but adds
-    ``PARTIAL`` because a multi-page scan (Real Book, fake-book, etc.)
-    realistically lands with some pages succeeded and some failed —
-    omr-leadsheet's per-page accuracy is not 100%. A practitioner who
-    uploaded a 30-page book and got 28 useful Songs is better off than
-    one who got nothing because page 7 confused Audiveris.
+    Mirrors the Recording.analysis_status shape from #67/#69 with two
+    additions:
+
+    - ``PARTIAL`` — a multi-page scan (Real Book, fake-book) realistically
+      lands with some pages succeeded and some failed; omr-leadsheet's
+      per-page accuracy is not 100%. A practitioner who got 28 of 30
+      useful Songs is better off than one who got zero because page 7
+      confused Audiveris.
+    - ``CANCELED`` — practitioner-initiated revoke (a 30-page Real Book
+      import takes ~30 minutes; the user must be able to abort mid-run
+      and have that distinct from FAILED). Runtime failures (OOM,
+      ollama timeout, Audiveris crash) still collapse to FAILED with
+      details in ``error_log``.
 
     ``PENDING`` — created, not yet enqueued.
     ``QUEUED`` — Celery task ID is on ``task_id``, worker hasn't started.
     ``RUNNING`` — orchestrator is currently extracting pages.
     ``COMPLETE`` — every page succeeded; ``pages_succeeded == page_count``.
     ``PARTIAL`` — at least one page succeeded AND at least one failed.
-    ``FAILED`` — zero pages succeeded (PDF unreadable, OMR returned nothing).
+    ``CANCELED`` — practitioner revoked the task mid-run.
+    ``FAILED`` — zero pages succeeded (PDF unreadable, OMR returned
+    nothing, runtime crash).
     """
 
     PENDING = "pending", "Pending"
@@ -67,6 +76,7 @@ class ChartImportStatus(models.TextChoices):
     RUNNING = "running", "Running"
     COMPLETE = "complete", "Complete"
     PARTIAL = "partial", "Partial (some pages failed)"
+    CANCELED = "canceled", "Canceled by user"
     FAILED = "failed", "Failed"
 
 
@@ -319,19 +329,35 @@ class ChartImport(models.Model):
     caused the concurrent-write race the #67/#69 review caught.
     """
 
+    # SET_NULL (not CASCADE) on user delete: the import audit trail —
+    # what got OMR'd, when, with what error_log — is more valuable
+    # than the link back to the uploader's account. Songs extracted
+    # via this import keep their Songbook relation (which has no
+    # user FK) and remain usable by other practitioners; cascading
+    # the ChartImport away would strip the provenance off those
+    # Songs (Song.import_run → null via the SET_NULL FK there).
+    # Plugin-agent hostile-review HIGH on PR #83 caught this:
+    # CASCADE here orphaned the provenance trail; SET_NULL keeps it.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name="chart_imports",
-        help_text="The practitioner who uploaded the PDF.",
+        help_text="The practitioner who uploaded the PDF; null if that user has since been deleted.",
     )
 
     # Content-addressed reference (SHA-256 → MEDIA_ROOT/pdf_upload/<sha>.pdf).
     # Same opaque-string convention as the audio uploader so the storage
     # layer can rotate (local → S3 → MinIO) without a schema migration.
+    #
+    # Uniqueness is per-user (see Meta.constraints) NOT global —
+    # two practitioners legitimately upload the same Real Book scan
+    # and each gets their own ChartImport. Global uniqueness would
+    # IntegrityError on the second upload AND leak existence info
+    # across users. Plugin-agent hostile-review HIGH on PR #83.
     file_ref = models.CharField(
         max_length=255,
-        unique=True,
         help_text="Content-addressed path (SHA-256) of the source PDF.",
     )
 
@@ -379,10 +405,22 @@ class ChartImport(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        # Belt-and-suspenders: unique=True on file_ref already prevents
-        # duplicate uploads of the same PDF; this index speeds the
-        # per-user list view ("show me my recent imports").
+        constraints = [
+            # Per-user idempotency: re-uploading the same PDF SHA as
+            # the same user reuses the existing ChartImport. Different
+            # users uploading the same PDF each get their own.
+            # ``condition`` excludes orphan rows (user=NULL after the
+            # uploader's account is deleted) — the constraint shouldn't
+            # block another live user from re-uploading the same PDF
+            # just because a deleted account once did.
+            models.UniqueConstraint(
+                fields=["user", "file_ref"],
+                condition=models.Q(user__isnull=False),
+                name="chartimport_user_file_ref_unique",
+            ),
+        ]
         indexes = [
+            # Speeds the per-user list view ("show me my recent imports").
             models.Index(
                 fields=["user", "-created_at"],
                 name="chartimport_user_recent_idx",
