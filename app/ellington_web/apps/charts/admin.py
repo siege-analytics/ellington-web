@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import ChordEvent, Measure, Section, Song, Songbook
+from .models import (
+    ChartImport,
+    ChartImportStatus,
+    ChordEvent,
+    Measure,
+    Section,
+    Song,
+    Songbook,
+)
 
 
 class SongInline(admin.TabularInline):
@@ -82,3 +90,35 @@ class ChordEventAdmin(admin.ModelAdmin):
     list_display = ("measure", "beat", "chord_symbol", "duration_beats")
     list_filter = ("measure__section__song",)
     search_fields = ("chord_symbol",)
+
+
+@admin.register(ChartImport)
+class ChartImportAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "status",
+        "source_songbook",
+        "page_count",
+        "pages_succeeded",
+        "pages_failed",
+        "created_at",
+        "completed_at",
+    )
+    list_filter = ("status", "source_songbook")
+    search_fields = ("file_ref", "user__username")
+    # Every field the orchestrator writes is read-only in admin —
+    # hand-editing a ChartImport's page-bookkeeping / error_log /
+    # status mid-run would race the worker. Operators clear stuck
+    # imports by deleting + re-uploading, not by editing.
+    readonly_fields = (
+        "created_at",
+        "completed_at",
+        "task_id",
+        "file_ref",
+        "status",
+        "page_count",
+        "pages_succeeded",
+        "pages_failed",
+        "error_log",
+    )

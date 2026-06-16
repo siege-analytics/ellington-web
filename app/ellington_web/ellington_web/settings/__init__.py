@@ -5,3 +5,4 @@ from .vector_data_file_settings import *
 from .api_settings import *
 from .generic_gis_settings import *
 from .drf_settings import *
+from .celery_settings import *
