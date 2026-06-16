@@ -1,15 +1,43 @@
-# Ellington — Plan Outline
+# Ellington — Product Plan
 
-A living roadmap for the Ellington web application, the spike engine it consumes, and the cluster substrate it runs on. Re-read at every major decision; revise rather than ignore.
+A living roadmap for the Ellington web application. Updated at every
+major decision; revise rather than ignore. Last revision: 2026-06-15
+after Phases 1, 1b, 2, 3a shipped via epic #60.
 
-Cross-repo references:
+## Cross-repo references
 
 | Repo | Purpose |
 |---|---|
-| [`siege-analytics/ellington-systems`](https://github.com/siege-analytics/ellington-systems) | Python port of the master-voicing-style engine + dispatcher (spike). Closed epic [#1](https://github.com/siege-analytics/ellington-systems/issues/1). Successor web epic [#12](https://github.com/siege-analytics/ellington-systems/issues/12). |
-| [`siege-analytics/ellington-web`](https://github.com/siege-analytics/ellington-web) | This repo. Django web app — GeoDjango Simple Template instantiation. |
-| [`siege-analytics/ellington-web-manifests`](https://github.com/siege-analytics/ellington-web-manifests) | k8s manifests, Tekton CI, ArgoCD application. |
-| [`siege-analytics/musescore4-chord-library-plugin`](https://github.com/siege-analytics/musescore4-chord-library-plugin) | Origin codebase. Ships `scripts/engine_dump.js` as the oracle shim for Ellington's Goal A diff harness. |
+| [`siege-analytics/ellington-web`](https://github.com/siege-analytics/ellington-web) | This repo — Django web app (GeoDjango Simple Template instantiation) |
+| [`siege-analytics/ellington-systems`](https://github.com/siege-analytics/ellington-systems) | Python port of the master-voicing-style dispatcher (spike; closed epic [#1](https://github.com/siege-analytics/ellington-systems/issues/1)) |
+| [`siege-analytics/ellington-web-manifests`](https://github.com/siege-analytics/ellington-web-manifests) | k8s manifests, Tekton CI, ArgoCD application |
+| [`siege-analytics/musescore4-chord-library-plugin`](https://github.com/siege-analytics/musescore4-chord-library-plugin) | Origin codebase — Stage B distillation pipeline produces `usage_notes[]` consumed by Ellington |
+| [`dheerajchand/omr-leadsheet`](/Users/dheerajchand/Documents/Professional/Siege_Analytics/Code/omr-leadsheet) | OMR pipeline — scanned PDF → `.mscz` lead sheet. To be integrated as a fourth Ellington ingest format (Phase 4-PDF). |
+
+## Product framing
+
+Ellington is a guitar practice + feedback platform. The core loop:
+
+1. User has a lead sheet (chord progression).
+2. User exports backing audio from that source (iRealPro audio export,
+   BiaB render, MuseScore render).
+3. User records themselves playing over the backing in Logic (or any
+   DAW).
+4. User uploads to Ellington.
+5. Ellington's audio pipeline detects what the player actually played,
+   time-aligns to the lead sheet measures, hands off to the comparator.
+6. The comparator produces a `CritiqueDraft` — both a quantitative
+   score and structured commentary fragments.
+7. The LLM coach (eventually) renders prose feedback.
+
+Two orthogonal axes the comparator works on:
+- **master × style × idiom** (chart context) — sourced from the
+  musescore4-chord-library-plugin's Stage B distillation pipeline
+- **detected playing vs chart ground truth** (alignment) — sourced
+  from sub-4 audio pipeline
+
+The plugin's Stage B is a separately-tracked workstream that I
+coordinate with the plugin agent on but don't drive.
 
 ## Architecture
 
@@ -20,193 +48,223 @@ Cross-repo references:
                                        │
                   ┌────────────────────┴────────────────────┐
                   │                                         │
-              Authentik                                 (eventually)
-            forwardauth                                  WhiteNoise +
-           (currently OFF —                             Daphne (ASGI)
-           ticket #14 disabled                          on port 8080
+              Authentik                                 WhiteNoise +
+            forwardauth                                 Daphne (ASGI)
+           (currently OFF —                             on port 8080
+           ticket #14 disabled                                │
             it for dev access)                                │
-                                                              │
                                                        Django (apps/core,
+                                                       apps/charts,
                                                        apps/practice,
-                                                       apps/timeline,
-                                                       apps/audio,
-                                                       apps/coach)
+                                                       apps/styles)
                                                               │
                                                        PostGIS db
                                                        ellington_web on
                                                        default/db-postgis-master
 ```
 
-Companion services (cyberpower microk8s, planned):
+Companion services on cyberpower microk8s (planned):
 
 ```
-GPU node ─┬─ audio pipeline worker (sub-4: aubio/CREPE/librosa)
-          └─ llm coach worker (sub-5: llama.cpp / vLLM, model TBD)
+GPU node ─┬─ audio pipeline worker (Phase 3b: madmom / CREPE / librosa)
+          ├─ omr pipeline worker (Phase 4-PDF: omr-leadsheet Celery task)
+          └─ llm coach worker (Phase 5: prose render via Anthropic API or local)
 ```
 
 ## Epic map
 
+The single epic is **siege-analytics/ellington-web#60** — practice-feedback loop.
+Phases 1-3a shipped 2026-06-12 to 2026-06-14.
+
 ```
-EPIC #12 — Ellington as web product (siege-analytics/ellington-systems)
+EPIC #60 — Practice-feedback loop
 │
-├─ sub-1 ───── k8s deployment substrate                        DONE
-│              (ellington-web-manifests#1)                     ✓ live
+├─ Phase 1 ─── iRealPro chart ingest                            DONE 2026-06-12
+│              (#61 / PR #62 — merged 0dd73a9)                   ✓ 1400 songs verified
+│              `manage.py import_irealpro <playlist.html_or_uri>`
 │
-├─ sub-2 ───── Django web application
-│   ├─ 2a ─── GST instantiation (ellington-web#6/#7)           DONE
-│   ├─ 2b ─── Authentik header-trust middleware                DONE
-│   │         (ellington-web#9/#10) + 6/6 tests pass
-│   ├─ 2c ─── PostGIS DB wiring                                DONE
-│   │         (ellington-web-manifests#2/#3)
-│   ├─ 2d ─── apps/core growth                                 PARTIAL
-│   │         (ensure_superuser command landed via #15/#16;
-│   │          base models / profile / audit log deferred
-│   │          until sub-3 or sub-4 forces the shape)
-│   └─ 2e ─── production build — docker-bake + Daphne + COPY   DONE
-│             (ellington-web#12/#13) → image swap #9/#10
+├─ Phase 1b ── DetectedVoicing.measure_index +                  DONE 2026-06-14
+│              apps/charts/timeline.py math helpers              ✓ 2ae0012
+│              (#63 / PR #64 — merged 2ae0012)
 │
-├─ sub-3 ───── Master Timeline + iReal Pro ingestion           NOT STARTED
-│              data shape:
-│                  songbook → song → measure → chord_event
-│                  voicings_referenced ← from sub-2b's spike port
+├─ Phase 2 ─── Practice-flow UI                                 DONE 2026-06-14
+│              (#65 / PR #66 — merged 8e56186)                   ✓ login/list/create/detail/delete
+│              session list/create/detail/delete + content-
+│              addressed file storage + tempo persistence
 │
-├─ sub-4 ───── Audio pipeline                                  NOT STARTED
-│              chord detection → alignment to master timeline
-│              → per-measure feedback artifact
+├─ Phase 3a ── Audio pipeline scaffolding                       DONE 2026-06-14
+│              (#67 / PR #69 — merged 27658c4)                   ✓ Celery task + placeholder analyzer
+│              Celery task + chart-mirroring placeholder
+│              Recording.analysis_status lifecycle field
 │
-└─ sub-5 ───── LLM coach                                       NOT STARTED
-               reads:
-                  per-measure feedback (sub-4)
-                  master timeline (sub-3)
-                  voicing-style preferences (sub-2 / spike)
-               writes:
-                  human-language practice guidance
+├─ Phase 3b ── Real chord detection                             NOT STARTED
+│              Algorithm choice TBD: madmom DeepChromaProcessor
+│              vs CREPE-based crema vs librosa+chordino vs
+│              Essentia. Multi-week. Needs design ticket.
+│
+├─ Phase 4-MS ─ MuseScore .mscz ingest                          PLANNED
+│              `manage.py import_musescore <song.mscz>`
+│              → MusicXML extract → ChordEvent rows
+│              + audio/MIDI export via MuseScore 4 CLI
+│
+├─ Phase 4-PDF ─ Scanned-PDF ingest via omr-leadsheet           NEW — see workstream B below
+│              Upload `.pdf` → Celery task on cyberpower fires
+│              omr-leadsheet pipeline → `.mscz` → ingest via
+│              Phase 4-MS importer
+│
+├─ Phase 4-BiaB ─ Band-in-a-Box import                          PLANNED
+│              Accept pre-rendered `.mid` + `.wav` exports.
+│              No native `.SGU/.MGU` parsing (no open-source
+│              parser exists).
+│
+├─ Phase 5 ─── Sub-5 LLM coach prose                            CONTRACT-ONLY
+│              (#57 — design note + reader signature stubbed,
+│               no implementation)
+│
+├─ Phase 5-quant ─ Quantitative review model                    NEW — see workstream C below
+│              Decompose comparator output into per-axis
+│              scores (chord-symbol divergence, voicing-tag
+│              affinity distance, tempo accuracy, etc.).
+│              Aggregable into a single score, comparable
+│              across sessions / styles / users.
+│
+└─ Phase 6 ─── Audio corpus model                               DEFERRED
+               `LabeledSample` with provenance + visibility enums.
+               Training data for sub-4, reference clips for sub-5.
+               (#59 fork-vs-extension decision deferred until
+                Coltrane Patterns + Bergonzi v1 reach s2-s4 plugin-side)
 ```
 
-Cross-cutting & follow-ups:
+## Active workstreams
 
-| Ticket | Track |
-|---|---|
-| [ellington-web-manifests#6](https://github.com/siege-analytics/ellington-web-manifests/issues/6) | HMAC validation sweep on every `*-webhook` (org-wide gap; not Ellington-specific but blocks production exposure) |
-| [ellington-web-manifests#18](https://github.com/siege-analytics/ellington-web-manifests/issues/18) | Graduate operator-applied Secrets to sealed-secrets OR Vault-injected (Vault already running cluster-side) |
-| [ellington-web-manifests#14](https://github.com/siege-analytics/ellington-web-manifests/issues/14) (closed) | Authentik gate currently OFF on the IngressRoute — restore when ready for public auth, see ticket for the one-line revert |
-| [geodjango_simple_template#30](https://github.com/siege-analytics/geodjango_simple_template/issues/30) | GST upstream — `staticfiles/` tracked in git + macOS Finder " 2" duplicate dirs |
-| [geodjango_simple_template#31](https://github.com/siege-analytics/geodjango_simple_template/issues/31) | GST upstream — `settings/__init__.py` import order bug; `logging.py` reads `settings.LOGS_DIRECTORY` before `path_settings` has it |
+Three workstreams move in parallel. Each has its own ticket(s); each
+is independently driveable. The product plan calls out which depends
+on what.
 
-## Substrate facts to remember
+### Workstream A — Phase 3b real chord detection
 
-(See workspace memory entry `reference_cyberpower_cluster_conventions.md` for the full version.)
+**State**: design conversation open; Dheeraj's go signal needed before
+ticket files.
 
-- **DNS:** `*.webhook.elect.info` is a wildcard A record → cluster. No DNS work for new webhooks.
-- **PostGIS:** single multi-tenant instance `default/db-postgis-master`, pod container is `postgis` (not `db-postgis-master`). Each app gets its own DB + role.
-- **Authentik:** single outpost `preview-elect-info-outpost` serves every Proxy Provider. New ProxyProvider → bind to that outpost. Don't spin up a new outpost.
-- **Tekton bake:** the cluster's `sites-build-bake` Task is reusable across repos — its script just runs `docker buildx bake --file docker-bake.hcl --push`. The hardcoded `results` outputs at the end are electinfo-sites-specific names but go to nowhere if the Pipeline doesn't consume them.
-- **Container registry:** in-cluster pull endpoint is **`localhost:32000`**, not `cyberpower:32000`. The registry NodePort is exposed on every node; each kubelet pulls from its own localhost.
-- **HMAC gap:** every `*-webhook` EventListener in the cluster accepts unsigned POSTs. Tighten before exposing production endpoints to untrusted networks — see `ellington-web-manifests#6`.
-- **Memory headroom:** cyberpower sits at ~169% memory limits / ~166% CPU limits (overcommit). One transient pressure event flapped the stateful tier 2026-06-08T19:30 CDT (magnum reboot cascade). Self-heals quickly; worth knowing.
+**Open questions** (will land in the design ticket as proposals):
 
-## Operational patterns
+- Algorithm: madmom `DeepChromaProcessor` (most-trodden in MIR) vs
+  CREPE-based crema (research-y but high accuracy) vs librosa+chordino
+  (lighter dep footprint) vs Essentia (C++; complex install)
+- Worker placement: Celery task on cyberpower GPU node OR Daphne
+  inline (no — multi-second work)
+- Source separation for mixed user uploads: Demucs is the standard;
+  required for shipping per Dheeraj 2026-06-12 ("users don't generally
+  separate stems")
 
-### Secret-handling
+**Dependencies**: needs Phase 3a (#67/#69) merged — DONE.
 
-Established by [ellington-web#15](https://github.com/siege-analytics/ellington-web/issues/15) + [ellington-web-manifests#17](https://github.com/siege-analytics/ellington-web-manifests/issues/17):
+### Workstream B — Phase 4 multi-format ingest
 
-1. Idempotent Django management command (`apps/core/management/commands/<verb>.py`)
-2. k8s Job manifest in `ellington-web-manifests/base/job-<verb>.yaml`, `envFrom` mounts both configmap and the operator-applied Secret
-3. Secret shape documented as `base/<verb>.yaml.example` (placeholder values; never live)
-4. README §N in `ellington-web-manifests` has the bootstrap recipe
+**State**: ticket TBD, scope confirmed:
 
-Concrete example tonight: `ensure_superuser` provisioned the `dheeraj` Django superuser with passwords sourced from `Secret/ellington-web-admin`. Re-running the Job is safe (idempotency tests assert it doesn't reset passwords).
+- **Phase 4-MS** (MuseScore `.mscz` ingest): standalone — extract
+  MusicXML from the `.mscz` ZIP, walk via music21 or manual XML
+  parsing, emit Songbook → Song → ChordEvent rows. ~1 week.
 
-Graduation to sealed-secrets or Vault is tracked at `ellington-web-manifests#18`.
+- **Phase 4-PDF** (scanned-PDF ingest via omr-leadsheet): user uploads
+  `.pdf` → Ellington fires a Celery task that:
+  1. Runs the omr-leadsheet pipeline on cyberpower (Audiveris + VLM
+     chord recognition + Tesseract lyric OCR + music21 reduction)
+  2. Receives the resulting `.mscz`
+  3. Hands it to Phase 4-MS importer to land ChordEvent rows
+  4. Surfaces the per-measure flagged review artifacts in the practice
+     session detail view so the user can correct OCR mistakes before
+     practice
+  ~2-3 weeks. Depends on omr-leadsheet being installable on cyberpower
+  (Audiveris + qwen2.5vl via ollama already running there for plugin
+  pipeline; same deps).
 
-### Git workflow
+- **Phase 4-BiaB** (Band-in-a-Box import): accept user-uploaded
+  pre-rendered `.mid` + `.wav` exports. No native `.SGU/.MGU` parsing.
+  ~1 week.
 
-Both `ellington-web` and `ellington-web-manifests`:
+**Dependencies**: Phase 1 (#61/#62) merged — DONE; Phase 1b
+(#63/#64) merged — DONE.
 
-- `develop` is the default branch (origin of all work)
-- `main` is downstream of `develop` (production), protected (PR-only, no force push, no deletion)
-- Feature branches: `feat/<ticket>-<slug>` off `develop`, PR → `develop`, then a separate "promote develop → main" PR for the production cut
-- One ticket per PR; ticket reference in every commit
-- 0 required approvals (solo dev), but PR gate is enforced
+### Workstream C — Quantitative review model
 
-## Technology stack
+**State**: ticket TBD. New direction per Dheeraj 2026-06-15.
 
-Candidates named in the original brief at session start. Treat as the **default** for each role unless something else proves itself — but don't lock in until the relevant sub-* actually starts.
+**Scope**: take the existing `CritiqueDraft` from
+`apps/styles/comparator.py` (currently outputs
+`style_match_score: float 0.0-1.0` + a list of free-form commentary
+items) and decompose into:
 
-### Audio pipeline (sub-4)
+- Per-axis scores: chord-symbol divergence rate per measure,
+  voicing-tag affinity distance, tempo-accuracy, timing precision,
+  proscriptive-rule violations, prescriptive-rule alignment
+- A principled aggregation that produces a single 0-100 score
+- A per-session record so users can see progression over time
+- Comparison surfaces — between users (eventually), between styles
+  (always: "you played 73% bossa, 21% bebop, 6% gypsy"), between
+  sessions (improvement-over-time chart)
 
-| Layer | Primary | Notes |
+**Dependencies**: independent of Phase 3b — the quantitative model
+works on whatever `DetectedVoicing[]` it gets. Phase 3a's
+chart-mirroring placeholder is sufficient to develop the scoring math
+against; the score becomes meaningful when Phase 3b's real detector
+lands.
+
+## Coordination — out-of-band workstreams
+
+These run independently; I sync with them but don't drive:
+
+- **Plugin agent's Stage B distillation pipeline** — produces the
+  `usage_notes[]` content Ellington's `Master` model carries. 18
+  masters / 2,073 notes / 200 proscriptive synced as of 2026-06-12
+  pre-deploy. Plugin agent is currently working
+  [plugin#505](https://github.com/siege-analytics/musescore4-chord-library-plugin/issues/505)
+  (soft-hyphen relaxation in s2 validator) to unblock 7 OCR-recovered
+  books at s1=accepted.
+
+- **omr-leadsheet** — the OMR pipeline this product plan integrates
+  via Phase 4-PDF. Currently on ticket
+  [omr#106](https://github.com/dheerajchand/omr-leadsheet/issues/106)
+  (VLM verification stage). Active development.
+
+- **Authentik gate enablement** — single-env-var flip
+  (`AUTHENTIK_HEADER_TRUST=1`) + manifests-side ingress annotation.
+  Deferred until practice-flow has non-Dheeraj users.
+
+## Deferred / parking-lot
+
+| Item | Why deferred | Revisit when |
 |---|---|---|
-| Stem splitting | **[Demucs](https://github.com/facebookresearch/demucs)** | facebookresearch; current SOTA quality for music source separation. GPU-accelerated. |
-| Stem splitting (fallback) | [Spleeter](https://github.com/deezer/spleeter) | deezer; faster, lower quality. Useful for cheap previews or CPU-only paths. |
-| Pitch detection | [CREPE](https://github.com/marl/crepe), [aubio](https://aubio.org/) | CREPE is neural and accurate; aubio is the classic DSP toolkit for onset/pitch/beat. |
-| Chord recognition | [chordino](https://www.vamp-plugins.org/plugin-doc/chordino.html), [madmom](https://github.com/CPJKU/madmom), [Essentia](https://essentia.upf.edu/) | Compare on the first batch of Demucs-separated guitar stems. Chordino is the old standard; madmom + Essentia are stronger on jazz. |
-| General DSP | [librosa](https://librosa.org/), [Essentia](https://essentia.upf.edu/) | librosa for prototyping, Essentia for production-quality analysis. |
-| Audio CLI | [SoX](https://sox.sourceforge.net/) | Format conversion, normalization, resampling. Always available. |
-| Speech (optional) | [Whisper](https://github.com/openai/whisper), [WhisperX](https://github.com/m-bain/whisperX) | If the practice loop ever needs spoken-instruction transcription. WhisperX adds word-level alignment. |
+| Automated plugin catalog sync (#58) | Manual `kubectl cp` + sync works for our cadence | Multiple agents need it OR plugin merge frequency >2/day sustained |
+| s5_lines fork-vs-extension (#59) | Need 2 corpora to decide | Coltrane Patterns + Bergonzi v1 both at s2-s4 plugin-side |
+| Audio corpus `LabeledSample` model | Sub-4 doesn't need training data yet | Phase 3b ships with measurable confidence |
+| Reinhardt / Howard Roberts onboarding | Reinhardt didn't write a method book; plugin#502 tracks gypsy-axis alternates | Dheeraj picks Horowitz / Rosenberg / Wrembel substitute |
 
-### LLM coach (sub-5)
+## Decision log
 
-| Layer | Primary | Notes |
+Material architectural calls, with date + brief why. Append, don't
+edit.
+
+| Date | Decision | Why |
 |---|---|---|
-| Inference server | **[vLLM](https://github.com/vllm-project/vllm)** | If running on a GPU node. PagedAttention gives the right throughput for the practice-loop use case. |
-| Inference server (lightweight) | [llama.cpp](https://github.com/ggerganov/llama.cpp) | CPU-friendly, useful for testing without GPU contention. |
-| Candidate models | Llama 3, Mistral, Qwen, Gemma, Phi | Decide on parameter size after sub-3 lands and the coach prompt shape is clear. Start with a 7B-class instruct model. |
-| TTS (if coach needs voice) | [XTTS](https://github.com/coqui-ai/TTS), [Bark](https://github.com/suno-ai/bark), [Coqui](https://github.com/coqui-ai/TTS), [piper](https://github.com/rhasspy/piper) | Default to piper (smallest + fastest) unless quality demands XTTS. |
+| 2026-06-10 | Three orthogonal axes: master × style × idiom | Single-axis model couldn't express "bossa chord vocabulary in gypsy backing while playing bebop voicings" |
+| 2026-06-11 | Polarity field on usage_notes (prescriptive/proscriptive) | Greene's corpus is heavily restriction-based; inferring polarity from narrative wording is fragile |
+| 2026-06-11 | Cross_ref between sibling notes | dom7#9 exception to dom7alt tonic-placement-restriction needs explicit link, not LLM inference |
+| 2026-06-12 | iRealPro first, then MuseScore + BiaB | iRealPro format is well-documented + Dheeraj has a 1400-song corpus ready |
+| 2026-06-12 | C (mixed-stem source separation) is the product target; A (separate stems) is the dev stepping stone | Users don't generally export separate stems from Logic |
+| 2026-06-12 | Django + htmx frontend (not SPA) | Matches GST stack; fast to ship; rich enough for v0 audio UX |
+| 2026-06-14 | omr-leadsheet integration as Phase 4-PDF (option B) | Highest product value — user uploads scanned songbook page → real lead sheet they can practice against |
+| 2026-06-14 | Quantitative review model as Phase 5-quant, independent of Phase 5 LLM coach | Quantitative scoring doesn't need prose; both axes can develop in parallel |
 
-### Master Timeline + ingestion (sub-3)
+## How to use this document
 
-| Layer | Primary | Notes |
-|---|---|---|
-| Lead-sheet source | **iReal Pro** | Primary content source; ~89 mentions in the brief. Owns the Real Book canon. |
-| Interchange | [MusicXML](https://www.musicxml.com/) | Standard format for lead sheets. iReal Pro exports it; we ingest it. |
-| Web rendering | [VexFlow](https://www.vexflow.com/), [Verovio](https://www.verovio.org/) | VexFlow is the Vue/React-friendly canvas renderer; Verovio produces SVG and is closer to engraving quality. |
-| Songbook concepts | Songbook → Song → Section (AABA / etc.) → Measure → ChordEvent → VoicingReference | The ChordEvent.voicings_referenced links into sub-2's ported spike engine. |
-
-### Job orchestration
-
-Already in GST's `requirements.txt`:
-
-- [Celery](https://docs.celeryq.dev/) (98 mentions — distributed task queue, the canonical Django pattern)
-- [Redis](https://redis.io/) (27 — broker for Celery + Django cache)
-
-Considered for higher-level orchestration:
-
-- [n8n](https://n8n.io/) — visual workflow engine; might be the right home for the audio pipeline's "Demucs → CREPE → chordino → diff against timeline" flow if it grows beyond a single Celery task chain.
-- [Kafka](https://kafka.apache.org/) (20 mentions) — if scale ever demands streamed events; almost certainly not for v1.
-
-### Web frontend
-
-Open per the open-questions section, but tools named:
-
-- [tone.js](https://tonejs.github.io/) — Web Audio framework; in-browser metronome / loop playback / signal routing for the practice loop.
-- VexFlow / Verovio (above) — for in-browser score display.
-
-## Decisions log
-
-Decisions made tonight (2026-06-08 evening into 2026-06-09 early morning) that affect future work:
-
-| Decision | Rationale |
-|---|---|
-| Daphne (ASGI), not gunicorn (WSGI) | Substrate placeholder Deployment was set to 8080 anticipating Daphne; ASGI keeps the door open for WebSockets in sub-4/5 |
-| WhiteNoise for static, no nginx sidecar | One fewer container; collected statics get hashed filenames + 1y caching; fine until traffic justifies a CDN |
-| Vue frontend deferred | Was part of GST; UI direction (Vue vs HTMX vs server-rendered) is a sub-3-or-later decision |
-| `apps/core` grows by need, not speculation | Tonight: just auth (sub-2b) + `ensure_superuser` (sub-2d). Profile / audit / mixins land when sub-3 or sub-4 forces the shape |
-| `localhost:32000` for cluster image pulls | NOT `cyberpower:32000` — sub-1's placeholder comment was wrong; verified against airflow/* + electinfo/* deployments |
-| operator-applied Secrets, not sealed-secrets yet | Lower setup cost; graduate when there are >5 secret sources or rotation cadence justifies the tooling |
-
-## Open questions
-
-- **UI direction.** Vue + REST? HTMX + server-rendered? Plain Django templates? Sub-3's "play a Real Book chart" view will force this. Tentatively HTMX-first; revisit when designing sub-3's first page.
-- **Audio pipeline placement.** Worker pod on the GPU node (cyberpower? magnum?) consuming a queue, OR an inline Django view? Inline only works for <30s clips; the practice loop assumes longer.
-- **iReal Pro ingestion source.** End-user upload via Django form? Or admin-ingestion of a curated set? Probably both, but admin-first is faster to ship.
-- **LLM coach hosting.** Local vLLM on the GPU node, or remote API? Local is cheaper and private; API is faster to prototype.
-- **Auth re-enable.** Authentik gate currently OFF (ticket #14). Re-enable before any non-Dheeraj user account exists — the bypass + a real account would let anyone log in as that user.
-
-## Pointers
-
-- This document. Refresh it as the plan changes — don't let it drift.
-- `ellington-web-manifests/README.md` — operator bootstrap recipes (DNS, Authentik config, ArgoCD, GitHub webhook, PostGIS DB, Django superuser).
-- Workspace memory `reference_cyberpower_cluster_conventions.md` — the cluster facts captured tonight.
-- Sub-2b's `apps/core/auth/middleware.py` + `backends.py` — the header-trust pattern for any future Authentik-fronted Django service in this cluster.
+- When kicking off a new ticket, point its body at the relevant
+  workstream section here for context.
+- When changing direction, update the decision log.
+- When a phase ships, update the epic map (status + commit) and the
+  "Last revision" line at the top.
+- When deferring something, add it to the parking-lot table with the
+  trigger condition for revisit.
+- Don't let this document drift — read it at the start of each
+  multi-day session.
