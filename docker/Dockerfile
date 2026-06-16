@@ -19,6 +19,12 @@ RUN apt-get install -y \
     vim \
     wget \
     curl \
+    # git is required by pip when a requirement uses the
+    # ``pkg @ git+https://...`` URL form. omr-leadsheet (PR #85,
+    # Phase 4-PDF #81) installs that way. Without git the Tekton
+    # build fails at the pip step even though GitHub Actions CI
+    # passes (Actions runners have git pre-installed). See #91.
+    git \
     zip \
     unzip \
     python3-pip \
