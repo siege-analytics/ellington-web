@@ -12,8 +12,14 @@ ENV PYTHONUNBUFFERED 1
 # assure TZ config
 RUN apt-get update && apt-get install -y tzdata
 
-# Install the basics, python utils, gdal, and postgres
-RUN apt-get install -y \
+# Install the basics, python utils, gdal, and postgres.
+# apt-get update is INSIDE this RUN so a layer rebuild always picks up
+# the current package index — previously the update was in a separate
+# RUN (line 13) which got cached for months, then this install would
+# 404 fetching versions that had been rotated out of security.ubuntu.com.
+# See #91 follow-up: PR #92 added git, which invalidated this layer
+# and surfaced the stale-index bug.
+RUN apt-get update && apt-get install -y \
     build-essential \
     ca-certificates \
     vim \
