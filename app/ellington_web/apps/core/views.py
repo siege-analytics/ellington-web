@@ -198,3 +198,135 @@ def self_delete_account(request: HttpRequest) -> HttpResponse:
 def account_deleted(request: HttpRequest) -> HttpResponse:
     """Goodbye page at /accounts/deleted/."""
     return render(request, "core/account_deleted.html")
+
+
+# ---------------------------------------------------------------------------
+# Follow / feed / user profile (epic #96 sub-ticket h / #122)
+# ---------------------------------------------------------------------------
+
+
+@require_http_methods(["GET"])
+def user_profile(request: HttpRequest, username: str) -> HttpResponse:
+    """Public profile at /users/<username>/.
+
+    Shows public Studios + follower/following counts + follow button
+    state. Private content (private studios, sharing-only recordings)
+    is gated and not surfaced.
+    """
+    from django.shortcuts import get_object_or_404
+
+    from apps.practice.models import Studio, StudioVisibility
+
+    from .models import Follow
+
+    target = get_object_or_404(User, username=username, is_active=True)
+
+    public_studios = list(
+        Studio.objects.filter(
+            owner=target, visibility=StudioVisibility.PUBLIC,
+        )
+    )
+
+    follower_count = Follow.objects.filter(followed=target).count()
+    following_count = Follow.objects.filter(follower=target).count()
+
+    is_self = (
+        request.user.is_authenticated and request.user.pk == target.pk
+    )
+    am_following = False
+    if request.user.is_authenticated and not is_self:
+        am_following = Follow.objects.filter(
+            follower=request.user, followed=target,
+        ).exists()
+
+    return render(request, "core/user_profile.html", {
+        "target": target,
+        "public_studios": public_studios,
+        "follower_count": follower_count,
+        "following_count": following_count,
+        "is_self": is_self,
+        "am_following": am_following,
+    })
+
+
+@require_http_methods(["POST"])
+def follow_user(request: HttpRequest, username: str) -> HttpResponse:
+    """Follow a user. POST-only. Refuses self-follow."""
+    from django.shortcuts import get_object_or_404
+
+    from .models import Follow
+
+    if not request.user.is_authenticated:
+        from django.shortcuts import resolve_url
+        return redirect(f"{resolve_url('login')}?next=/users/{username}/")
+
+    target = get_object_or_404(User, username=username, is_active=True)
+    if target.pk == request.user.pk:
+        messages.error(request, "You can't follow yourself.")
+        return redirect("core:user_profile", username=username)
+
+    Follow.objects.get_or_create(follower=request.user, followed=target)
+    messages.success(request, f"Following {target.username}.")
+    return redirect("core:user_profile", username=username)
+
+
+@require_http_methods(["POST"])
+def unfollow_user(request: HttpRequest, username: str) -> HttpResponse:
+    """Unfollow. POST-only. Idempotent."""
+    from django.shortcuts import get_object_or_404
+
+    from .models import Follow
+
+    if not request.user.is_authenticated:
+        return redirect("core:user_profile", username=username)
+
+    target = get_object_or_404(User, username=username)
+    Follow.objects.filter(follower=request.user, followed=target).delete()
+    messages.info(request, f"Unfollowed {target.username}.")
+    return redirect("core:user_profile", username=username)
+
+
+@require_http_methods(["GET"])
+def feed(request: HttpRequest) -> HttpResponse:
+    """Followed-users activity feed at /feed/.
+
+    v1 surface aggregates:
+    - Public Studios created by followed users (recent first)
+    - RuleComments by followed users (excluding deleted)
+
+    Polled on page load. Real-time push is a v2 affordance.
+    """
+    if not request.user.is_authenticated:
+        from django.shortcuts import resolve_url
+        return redirect(f"{resolve_url('login')}?next=/feed/")
+
+    from apps.practice.models import Studio, StudioVisibility
+    from apps.rule_review.models import RuleComment
+
+    from .models import Follow
+
+    followed_ids = Follow.objects.filter(
+        follower=request.user,
+    ).values_list("followed_id", flat=True)
+
+    recent_studios = (
+        Studio.objects.filter(
+            owner_id__in=followed_ids,
+            visibility=StudioVisibility.PUBLIC,
+        )
+        .select_related("owner")
+        .order_by("-created_at")[:20]
+    )
+
+    recent_comments = (
+        RuleComment.objects.filter(
+            author_id__in=followed_ids, deleted_at__isnull=True,
+        )
+        .select_related("author", "rule")
+        .order_by("-created_at")[:20]
+    )
+
+    return render(request, "core/feed.html", {
+        "recent_studios": recent_studios,
+        "recent_comments": recent_comments,
+    })

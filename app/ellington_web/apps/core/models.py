@@ -272,3 +272,57 @@ class AccountDeletionAudit(models.Model):
 
     def __str__(self) -> str:
         return f"AccountDeletionAudit({self.deleted_username} @ {self.deleted_at:%Y-%m-%d})"
+
+
+# ---------------------------------------------------------------------------
+# Follow (epic #96 sub-ticket h / #122)
+# ---------------------------------------------------------------------------
+
+
+class Follow(models.Model):
+    """One-directional follow.
+
+    ``follower`` follows ``followed``. No reciprocity required. Self-
+    follow rejected at the model layer via the
+    ``follow_no_self_follow`` constraint.
+
+    PROTECT on both FKs so the follow audit trail survives via the
+    sentinel-user anonymize path. Deletion of either side via
+    \`delete_user_account\` repoints both ends through the sentinel.
+    """
+
+    follower = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="following",
+        help_text="The user doing the following.",
+    )
+    followed = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="followers",
+        help_text="The user being followed.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["follower", "followed"],
+                name="follow_follower_followed_unique",
+            ),
+            models.CheckConstraint(
+                check=~models.Q(follower=models.F("followed")),
+                name="follow_no_self_follow",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["followed", "-created_at"],
+                name="follow_followed_recent_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Follow({self.follower_id} → {self.followed_id})"
