@@ -1,0 +1,41 @@
+# GitGuardian config — silences known false-positive surfaces while
+# leaving production .py code fully scanned.
+#
+# See https://docs.gitguardian.com/ggshield-docs/reference/file-config
+# Filed under ellington-web#116.
+#
+# Iron rule when extending: every new entry MUST be either (a) a path
+# that contains ONLY non-credential vocabulary (test fixtures, prose
+# templates, .example files) OR (b) a specific named match for a
+# documented dev default. Never add production .py paths.
+
+version: 2
+
+secret:
+  ignored_paths:
+    # Test files — passwords are generated via secrets.token_urlsafe(16)
+    # or come from synthetic fixtures; no real credentials.
+    - "**/test_*.py"
+    - "**/tests_*.py"
+    - "**/tests/**"
+
+    # Email + auth templates — "password" appears as prose ("type your
+    # new password", "Confirm password") not as a value assignment.
+    - "**/templates/email/**"
+    - "**/templates/registration/**"
+    - "**/templates/core/account_*.html"
+    - "**/templates/core/accept_invite.html"
+    - "**/templates/practice/share_recording.html"
+
+    # Secret-template files in the manifests pattern. The populated
+    # copy is .gitignore'd; the .example template carries a
+    # REPLACE_WITH_... placeholder, not an actual credential.
+    - "**/*.example"
+    - "**/*.yaml.example"
+
+  ignored_matches:
+    - name: "Django dev SECRET_KEY fallback"
+      # The dev default in django_settings.py is "tiddlywinks" — a
+      # documented placeholder used only when SECRET_KEY env is empty
+      # (production overrides via env). Not a credential.
+      match: "tiddlywinks"
