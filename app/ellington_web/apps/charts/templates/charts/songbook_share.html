@@ -1,0 +1,20 @@
+{% extends "charts/base.html" %}
+
+{% block title %}Share {{ songbook.title }} — Ellington{% endblock %}
+
+{% block content %}
+<h1>Share &ldquo;{{ songbook.title }}&rdquo;</h1>
+
+<form method="post">
+  {% csrf_token %}
+  <p>
+    <label for="recipient_lookup">Recipient (email or username)</label>
+    <input type="text" id="recipient_lookup" name="recipient_lookup" required>
+  </p>
+  <p>
+    <label for="share_note">Note (optional)</label>
+    <textarea id="share_note" name="share_note" rows="3" maxlength="2000"></textarea>
+  </p>
+  <p><input type="submit" value="Share"></p>
+</form>
+{% endblock %}

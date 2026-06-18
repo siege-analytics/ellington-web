@@ -1,0 +1,36 @@
+{% extends "charts/base.html" %}
+
+{% block title %}Songbooks — Ellington{% endblock %}
+
+{% block content %}
+<h1>Songbooks</h1>
+
+{% if songbooks %}
+<table>
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Visibility</th>
+      <th>Owner</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for sb in songbooks %}
+    <tr>
+      <td>{{ sb.title }}</td>
+      <td><span class="badge">{{ sb.get_visibility_display }}</span></td>
+      <td>{{ sb.owner.username|default:"—" }}</td>
+      <td>
+        {% if sb.owner == user %}
+        <a href="{% url 'charts:songbook_share' sb.pk %}">Share</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">No songbooks accessible.</div>
+{% endif %}
+{% endblock %}
