@@ -81,22 +81,30 @@ def _alteration_token(modification) -> str | None:
     interval = getattr(modification, "interval", None)
     if interval is None:
         return None
-    name = getattr(interval, "directedName", "") or ""
     degree = getattr(modification, "degree", None)
     if degree is None:
         return None
-    # Augmented = sharp; diminished = flat. Direction (up vs down) on a
-    # unison/octave flips the sign — A-1 is "augmented unison down" =
-    # flat by a semitone, A1 is "augmented unison up" = sharp.
-    is_flat = name.startswith("d") or name.startswith("A-")
-    is_sharp = name.startswith("A") and not name.startswith("A-")
-    if is_flat:
-        return f"b{degree}"
-    if is_sharp:
+    # Use semitone arithmetic instead of directedName-prefix sniffing
+    # (#76). Prefix sniffing mis-classifies `d-1` (descending diminished
+    # unison ≡ sharp), `AA1` / `dd1` (doubly-aug/dim), and any other
+    # edge case where the directedName layout doesn't follow the simple
+    # `A`/`d` ↔ sharp/flat heuristic. Semitones are the ground truth.
+    #
+    # ±1 semitone → ♯/♭; ±2 → ♯♯/♭♭ collapsed to None (caller surfaces
+    # as a corpus-coverage warning); 0 (perfect/major) → no-op.
+    semitones = getattr(interval, "semitones", None)
+    if semitones is None:
+        return None
+    if semitones == 0:
+        return ""
+    if semitones == 1:
         return f"#{degree}"
-    # Perfect/Major intervals on alteration are a no-op (the chord
-    # tone is already where it should be); skip silently.
-    return ""
+    if semitones == -1:
+        return f"b{degree}"
+    # Doubly-augmented / doubly-diminished are vanishingly rare in jazz
+    # lead sheets; fall through to None so the caller's unmapped-warning
+    # path makes them visible rather than silently dropping.
+    return None
 
 
 def normalize_music21_chord_symbol(chord_symbol: "ChordSymbol") -> NormalizedChord:

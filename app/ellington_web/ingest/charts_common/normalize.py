@@ -37,7 +37,7 @@ from dataclasses import dataclass
 # canonical order, ascending by degree with flat before sharp at the
 # same degree — the jazz lead-sheet convention.
 _ALTERATION_TOKEN_RE = re.compile(
-    r"(?:b5|\#5|b9|\#9|\#11|b13|alt|add9|add2)"
+    r"(?:b5|\#5|b6|\#6|b9|\#9|\#11|b13|alt|add9|add2)"
 )
 # Add-tones (add9, add2) sort after explicit alterations but before
 # the umbrella ``alt``. Pulled out as a named constant per the third-
@@ -48,6 +48,8 @@ _ALTERATION_SORT_KEY: dict[str, tuple[int, int]] = {
     # (degree, accidental_rank — flat=0, sharp=1)
     "b5":   (5, 0),
     "#5":   (5, 1),
+    "b6":   (6, 0),
+    "#6":   (6, 1),
     "b9":   (9, 0),
     "#9":   (9, 1),
     "#11":  (11, 1),

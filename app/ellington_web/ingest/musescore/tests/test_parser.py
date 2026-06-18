@@ -173,6 +173,30 @@ class TestParsePathErrors(SimpleTestCase):
         finally:
             bogus.unlink(missing_ok=True)
 
+    def test_key_signature_derived_via_music21_9_accessor(self) -> None:
+        """#77: KeySignature.asKey().tonic.name replaces tonicPitchNameWithCase.
+
+        Build a minimal Score in memory with a known signature and confirm
+        the parser derives the expected tonic. Two fixtures: C major (0
+        sharps) and F major (1 flat) — both lock the modern accessor.
+        """
+        from music21 import key, meter, note, stream
+
+        from ingest.musescore.parser import _map_score
+
+        for sharps, expected in [(0, "C"), (-1, "F")]:
+            with self.subTest(sharps=sharps):
+                score = stream.Score()
+                part = stream.Part()
+                measure = stream.Measure(number=1)
+                measure.append(key.KeySignature(sharps))
+                measure.append(meter.TimeSignature("4/4"))
+                measure.append(note.Note("C4", quarterLength=4.0))
+                part.append(measure)
+                score.append(part)
+                parsed = _map_score(score)
+                self.assertEqual(parsed.key, expected)
+
     def test_mscz_without_mscore_raises_musescore_not_found(self) -> None:
         # Simulate a .mscz input when mscore is unavailable: stash the
         # fixture XML under a .mscz extension (we never actually call

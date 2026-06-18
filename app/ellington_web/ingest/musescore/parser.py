@@ -305,12 +305,17 @@ def _map_score(score: "Score") -> ParsedSong:
         except (TypeError, ValueError):
             tempo_bpm = None
 
-    # Key — derive from key signature on the first measure, fall back to "C"
+    # Key — derive from key signature on the first measure, fall back to "C".
+    # music21 9.x: KeySignature.asKey() returns a Key; use Key.tonic.name (the
+    # deprecated tonicPitchNameWithCase form is going away in 10.x). Mode is
+    # not known from sharps alone — caller treats key as major-by-default.
+    from music21 import exceptions21 as _m21_exc
+
     key_obj = next(iter(flat.getElementsByClass("KeySignature")), None)
     if key_obj is not None:
         try:
-            key_str = key_obj.asKey().tonicPitchNameWithCase
-        except Exception:  # noqa: BLE001 — music21 raises a grab-bag here
+            key_str = key_obj.asKey().tonic.name
+        except _m21_exc.Music21Exception:
             key_str = "C"
     else:
         key_str = "C"

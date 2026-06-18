@@ -193,6 +193,14 @@ class EngineRule(models.Model):
         " extracted from. Used by the review UI to link to the source"
         " (plugin #550) once the deep-link locator ships.",
     )
+    source_pdf_filename = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Filename of the source PDF the anchor was extracted"
+        " from. Populated by plugin #567 source_locator. Surfaced in"
+        " the rule_review UI as 'Page N of <filename>'. Empty when the"
+        " source isn't a tracked PDF (e.g. transcript-only rules).",
+    )
 
     is_active = models.BooleanField(
         default=True,

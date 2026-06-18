@@ -72,3 +72,65 @@ class TestNormalizeMusic21ChordSymbol(SimpleTestCase):
     def test_b5_alteration_propagates(self) -> None:
         out = self._normalize("D-7b5")  # Db7b5
         self.assertEqual(out.canonical, "Db7b5")
+
+
+class TestAlterationTokenSemitones(SimpleTestCase):
+    """#76: ``_alteration_token`` uses ``Interval.semitones``, not name prefix.
+
+    The prior implementation sniffed ``directedName`` (`"A1"`, `"A-1"`, `"d1"`)
+    to decide flat vs sharp. Constructed ChordStepModifications with
+    semitone-equivalent but unusual interval shapes (descending dim ≡ sharp,
+    doubly-aug, doubly-dim) exercise the cases where prefix sniffing fails
+    and semitone math succeeds.
+    """
+
+    def _make_mod(self, degree: int, interval_obj):
+        from music21 import harmony as h_mod
+
+        mod = h_mod.ChordStepModification()
+        mod.degree = degree
+        mod.interval = interval_obj
+        return mod
+
+    def test_ascending_aug_unison_is_sharp(self) -> None:
+        from music21 import interval as i_mod
+
+        from ingest.musescore.normalize import _alteration_token
+
+        token = _alteration_token(self._make_mod(5, i_mod.Interval("A1")))
+        self.assertEqual(token, "#5")
+
+    def test_descending_aug_unison_is_flat(self) -> None:
+        from music21 import interval as i_mod
+
+        from ingest.musescore.normalize import _alteration_token
+
+        token = _alteration_token(self._make_mod(9, i_mod.Interval("A-1")))
+        self.assertEqual(token, "b9")
+
+    def test_descending_dim_unison_is_sharp(self) -> None:
+        # `d-1` descending dim unison = +1 semitone (same as sharp).
+        # Old prefix code mis-classified this as flat; semitone math
+        # gets it right.
+        from music21 import interval as i_mod
+
+        from ingest.musescore.normalize import _alteration_token
+
+        token = _alteration_token(self._make_mod(11, i_mod.Interval("d-1")))
+        self.assertEqual(token, "#11")
+
+    def test_doubly_augmented_rejected(self) -> None:
+        from music21 import interval as i_mod
+
+        from ingest.musescore.normalize import _alteration_token
+
+        token = _alteration_token(self._make_mod(5, i_mod.Interval("AA1")))
+        self.assertIsNone(token)
+
+    def test_perfect_unison_is_noop(self) -> None:
+        from music21 import interval as i_mod
+
+        from ingest.musescore.normalize import _alteration_token
+
+        token = _alteration_token(self._make_mod(5, i_mod.Interval("P1")))
+        self.assertEqual(token, "")
