@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ target.username }} — Ellington</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <style>
+    body { max-width: 720px; margin: 2em auto; padding: 0 1em; font-family: var(--font-body); }
+    h1 { font-family: var(--font-display); }
+    .counts { color: var(--fg-muted); }
+    button {
+      padding: 0.5em 1em; background: var(--link); color: white;
+      border: none; border-radius: 3px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>{{ target.username }}</h1>
+
+  <p class="counts">
+    <strong>{{ follower_count }}</strong> follower{{ follower_count|pluralize }} ·
+    <strong>{{ following_count }}</strong> following
+  </p>
+
+  {% if user.is_authenticated and not is_self %}
+    {% if am_following %}
+    <form method="post" action="{% url 'unfollow_user' target.username %}">
+      {% csrf_token %}
+      <button type="submit">Unfollow</button>
+    </form>
+    {% else %}
+    <form method="post" action="{% url 'follow_user' target.username %}">
+      {% csrf_token %}
+      <button type="submit">Follow</button>
+    </form>
+    {% endif %}
+  {% endif %}
+
+  <h2>Public studios</h2>
+  {% if public_studios %}
+  <ul>
+    {% for s in public_studios %}
+    <li><a href="{% url 'practice:studio_detail' s.slug %}">{{ s.name }}</a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p><em>No public studios.</em></p>
+  {% endif %}
+</body>
+</html>
