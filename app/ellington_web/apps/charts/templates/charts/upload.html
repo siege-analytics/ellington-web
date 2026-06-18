@@ -1,0 +1,27 @@
+{% extends "charts/base.html" %}
+
+{% block title %}Upload PDF — Ellington{% endblock %}
+
+{% block content %}
+<h1>Upload a lead-sheet PDF</h1>
+
+<p>
+  Upload a single page or a multi-page book scan. Pages are extracted
+  one-by-one by the OMR pipeline; you'll see a per-page result in the
+  import detail view.
+</p>
+
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  {% for field in form %}
+    <p>
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.help_text %}<small class="helptext">{{ field.help_text }}</small>{% endif %}
+      {{ field.errors }}
+    </p>
+  {% endfor %}
+  <p><input type="submit" value="Upload"></p>
+</form>
+{% endblock %}

@@ -29,6 +29,7 @@ urlpatterns = [
     path("locations/", include("locations.urls")),
     path("critique/", include("apps.styles.urls")),
     path("practice/", include("apps.practice.urls")),
+    path("charts/", include("apps.charts.urls")),
 ]
 
 # In dev, Daphne serves user-uploaded recordings from MEDIA_ROOT. In
