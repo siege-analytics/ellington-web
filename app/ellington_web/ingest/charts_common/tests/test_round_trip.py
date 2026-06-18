@@ -136,3 +136,30 @@ class TestCrossAdapterParity(SimpleTestCase):
             [],
             "Cross-adapter parity broken:\n  - " + "\n  - ".join(failures),
         )
+
+
+class TestCanonicalAlterationsSixthDegree(SimpleTestCase):
+    """#79: ``b6`` / ``#6`` recognized as proper alteration tokens.
+
+    Before #79, ``b6`` fell through to the leftover list and got
+    appended after sorted tokens — so ``C7b6b9`` came out as
+    ``C7b9b6`` instead of canonical ``C7b6b9`` (degree 6 before 9).
+    """
+
+    def test_b6_sorts_before_b9(self) -> None:
+        from ingest.charts_common.normalize import canonical_alterations
+
+        # Both input orders must produce the canonical ``b6b9``.
+        self.assertEqual(canonical_alterations("b6b9"), "b6b9")
+        self.assertEqual(canonical_alterations("b9b6"), "b6b9")
+
+    def test_sharp_6_sorts_before_sharp_11(self) -> None:
+        from ingest.charts_common.normalize import canonical_alterations
+
+        self.assertEqual(canonical_alterations("#11#6"), "#6#11")
+
+    def test_b6_and_sharp_6_at_same_degree(self) -> None:
+        # Flat-before-sharp at the same degree, matching b5/#5 convention.
+        from ingest.charts_common.normalize import canonical_alterations
+
+        self.assertEqual(canonical_alterations("#6b6"), "b6#6")
