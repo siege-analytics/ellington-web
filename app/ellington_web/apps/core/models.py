@@ -376,3 +376,75 @@ class DirectMessage(models.Model):
 
     def __str__(self) -> str:
         return f"DirectMessage({self.sender_id} → {self.recipient_id} @ {self.sent_at:%Y-%m-%d %H:%M})"
+
+
+# ---------------------------------------------------------------------------
+# RolePromotionAudit (epic #96 sub-ticket j / #131)
+# ---------------------------------------------------------------------------
+
+
+class RolePromotionAudit(models.Model):
+    """One row per role-flag change on a UserProfile.
+
+    Captures who flipped what, when, and (optionally) why. Mirror of
+    AccountDeletionAudit's immutability shape — written by signal
+    handlers, never edited or deleted from the admin UI.
+
+    ``promoted_by`` is nullable + SET_NULL because the system can write
+    audit rows from management commands (no request user) — those rows
+    keep ``promoted_by_username`` text snapshot only.
+    """
+
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="role_promotions_received",
+        help_text="The user whose role flipped.",
+    )
+    target_username = models.CharField(
+        max_length=150,
+        help_text="Denormalized snapshot of target_user.username at"
+        " the time of the change.",
+    )
+    promoted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="role_promotions_initiated",
+        help_text="The admin who flipped the field. Null when set by"
+        " a management command / migration / system task.",
+    )
+    promoted_by_username = models.CharField(
+        max_length=150,
+        blank=True,
+        help_text="Denormalized snapshot of promoted_by.username (or"
+        " 'system' for non-user-initiated changes).",
+    )
+    field_name = models.CharField(
+        max_length=64,
+        db_index=True,
+        help_text="Which field changed — e.g. 'is_pedagogue', 'is_staff'.",
+    )
+    old_value = models.BooleanField()
+    new_value = models.BooleanField()
+    reason = models.TextField(
+        blank=True,
+        help_text="Optional reason captured at the call site.",
+    )
+    promoted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-promoted_at"]
+        indexes = [
+            models.Index(
+                fields=["target_user", "-promoted_at"],
+                name="rolepromo_target_recent_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"RolePromotionAudit({self.target_username}.{self.field_name}:"
+            f" {self.old_value}→{self.new_value} @ {self.promoted_at:%Y-%m-%d})"
+        )
