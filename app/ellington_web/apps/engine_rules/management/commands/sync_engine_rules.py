@@ -62,7 +62,7 @@ from apps.styles.models import Master
 # Our consumer-side declared version. When the manifest's
 # ``min_consumer_version`` is greater than this, the sync refuses to
 # proceed — operator must upgrade Ellington first.
-CONSUMER_VERSION = "0.1.0"
+CONSUMER_VERSION = "0.2.0"
 
 # GitHub Release URL template for the plugin's engine-rules releases.
 # The release tag is the input; the asset name is fixed per the
