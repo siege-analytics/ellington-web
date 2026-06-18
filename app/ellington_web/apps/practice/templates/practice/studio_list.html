@@ -1,0 +1,38 @@
+{% extends "practice/base.html" %}
+
+{% block title %}Studios — Ellington{% endblock %}
+
+{% block content %}
+<h1>Studios</h1>
+
+<p><a href="{% url 'practice:studio_create' %}">+ Create a studio</a></p>
+
+<h2>My studios</h2>
+{% if my_studios %}
+<ul>
+  {% for s in my_studios %}
+  <li>
+    <a href="{% url 'practice:studio_detail' s.slug %}">{{ s.name }}</a>
+    — {{ s.get_visibility_display }}
+    {% if s.description %}<br><small>{{ s.description|truncatechars:120 }}</small>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty-state">You're not in any studios yet.</div>
+{% endif %}
+
+<h2>Public studios you could join</h2>
+{% if public_studios %}
+<ul>
+  {% for s in public_studios %}
+  <li>
+    <a href="{% url 'practice:studio_detail' s.slug %}">{{ s.name }}</a>
+    {% if s.description %}<br><small>{{ s.description|truncatechars:120 }}</small>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty-state">No public studios available right now.</div>
+{% endif %}
+{% endblock %}

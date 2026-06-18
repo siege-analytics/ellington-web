@@ -10,6 +10,8 @@ from .models import (
     Recording,
     RecordingComment,
     RecordingShare,
+    Studio,
+    StudioMember,
 )
 
 
@@ -146,3 +148,22 @@ class RecordingCommentAdmin(admin.ModelAdmin):
     @admin.display(boolean=True, description="deleted")
     def is_deleted(self, obj):
         return obj.deleted_at is not None
+
+
+@admin.register(Studio)
+class StudioAdmin(admin.ModelAdmin):
+    list_display = ("slug", "name", "owner", "visibility", "created_at")
+    list_filter = ("visibility",)
+    search_fields = ("slug", "name")
+    readonly_fields = ("created_at", "updated_at")
+    raw_id_fields = ("owner",)
+    prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(StudioMember)
+class StudioMemberAdmin(admin.ModelAdmin):
+    list_display = ("studio", "user", "role", "invited_by", "joined_at")
+    list_filter = ("role",)
+    search_fields = ("studio__slug", "user__username")
+    readonly_fields = ("joined_at",)
+    raw_id_fields = ("studio", "user", "invited_by")

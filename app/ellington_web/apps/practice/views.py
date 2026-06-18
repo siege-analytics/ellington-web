@@ -17,7 +17,12 @@ from __future__ import annotations
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Prefetch
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponseForbidden,
+    HttpResponseRedirect,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
@@ -442,3 +447,148 @@ def edit_recording_comment(
     return redirect(
         "practice:session_detail", pk=comment.recording.session_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Studios (epic #96 sub-ticket f / #120)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def studio_list(request: HttpRequest) -> HttpResponse:
+    """List my studios + browsable public studios."""
+    from django.db.models import Q
+
+    from .models import Studio, StudioRole
+
+    my_studios = (
+        Studio.objects
+        .filter(
+            Q(owner=request.user)
+            | Q(memberships__user=request.user)
+        )
+        .filter(~Q(memberships__user=request.user, memberships__role=StudioRole.BANNED))
+        .distinct()
+    )
+    public_studios = (
+        Studio.objects
+        .filter(visibility="public")
+        .exclude(memberships__user=request.user)
+        .order_by("name")
+    )
+    return render(request, "practice/studio_list.html", {
+        "my_studios": my_studios,
+        "public_studios": public_studios,
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def studio_create(request: HttpRequest) -> HttpResponse:
+    """Create a new Studio. Owner is request.user."""
+    from django.utils.text import slugify
+
+    from .models import Studio, StudioMember, StudioRole, StudioVisibility
+
+    if request.method == "POST":
+        name = (request.POST.get("name") or "").strip()
+        description = (request.POST.get("description") or "").strip()
+        visibility = (request.POST.get("visibility") or StudioVisibility.PRIVATE).strip()
+
+        if not name:
+            messages.error(request, "name is required")
+            return render(request, "practice/studio_form.html", {})
+
+        if visibility not in {c[0] for c in StudioVisibility.choices}:
+            visibility = StudioVisibility.PRIVATE
+
+        base_slug = slugify(name)[:48] or "studio"
+        slug = base_slug
+        n = 1
+        while Studio.objects.filter(slug=slug).exists():
+            n += 1
+            slug = f"{base_slug}-{n}"
+
+        studio = Studio.objects.create(
+            slug=slug, name=name, description=description,
+            owner=request.user, visibility=visibility,
+        )
+        StudioMember.objects.create(
+            studio=studio, user=request.user, role=StudioRole.MODERATOR,
+        )
+        messages.success(request, f"Studio '{studio.name}' created.")
+        return redirect("practice:studio_detail", slug=studio.slug)
+
+    return render(request, "practice/studio_form.html", {})
+
+
+@login_required
+def studio_detail(request: HttpRequest, slug: str) -> HttpResponse:
+    """Studio detail — members + recent activity. Visibility-gated."""
+    from .models import Studio, StudioRole
+
+    studio = get_object_or_404(Studio, slug=slug)
+
+    my_member = studio.memberships.filter(user=request.user).first()
+    is_member = my_member is not None and my_member.role != StudioRole.BANNED
+
+    if studio.visibility == "private" and not is_member:
+        # 404 to avoid leaking existence
+        return get_object_or_404(Studio, slug=slug, visibility__in=["public", "link_invite"])
+
+    memberships = list(
+        studio.memberships
+        .exclude(role=StudioRole.BANNED)
+        .select_related("user")
+    )
+
+    return render(request, "practice/studio_detail.html", {
+        "studio": studio,
+        "memberships": memberships,
+        "my_member": my_member,
+        "is_member": is_member,
+        "is_moderator": (
+            is_member and my_member.role == StudioRole.MODERATOR
+        ) or studio.owner_id == request.user.pk,
+    })
+
+
+@login_required
+@require_POST
+def studio_join(request: HttpRequest, slug: str) -> HttpResponse:
+    """Join a public or link-invite studio. Banned users can't re-join."""
+    from .models import Studio, StudioMember, StudioRole
+
+    studio = get_object_or_404(Studio, slug=slug)
+    if studio.visibility == "private":
+        return HttpResponseForbidden("Private studio — invite required.")
+
+    existing = studio.memberships.filter(user=request.user).first()
+    if existing:
+        if existing.role == StudioRole.BANNED:
+            return HttpResponseForbidden("You're banned from this studio.")
+        messages.info(request, "You're already a member.")
+        return redirect("practice:studio_detail", slug=slug)
+
+    StudioMember.objects.create(
+        studio=studio, user=request.user, role=StudioRole.MEMBER,
+    )
+    messages.success(request, f"Joined '{studio.name}'.")
+    return redirect("practice:studio_detail", slug=slug)
+
+
+@login_required
+@require_POST
+def studio_leave(request: HttpRequest, slug: str) -> HttpResponse:
+    """Leave a studio. Owner can't leave (they must transfer first;
+    transfer is a v2 affordance)."""
+    from .models import Studio
+
+    studio = get_object_or_404(Studio, slug=slug)
+    if studio.owner_id == request.user.pk:
+        messages.error(request, "Owners can't leave — transfer ownership first.")
+        return redirect("practice:studio_detail", slug=slug)
+
+    studio.memberships.filter(user=request.user).delete()
+    messages.success(request, f"Left '{studio.name}'.")
+    return redirect("practice:studio_list")

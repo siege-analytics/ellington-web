@@ -1,0 +1,28 @@
+{% extends "practice/base.html" %}
+
+{% block title %}New studio — Ellington{% endblock %}
+
+{% block content %}
+<h1>Create a studio</h1>
+
+<form method="post">
+  {% csrf_token %}
+  <p>
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required maxlength="120">
+  </p>
+  <p>
+    <label for="description">Description (optional)</label>
+    <textarea id="description" name="description" rows="3" maxlength="2000"></textarea>
+  </p>
+  <p>
+    <label for="visibility">Visibility</label>
+    <select id="visibility" name="visibility">
+      <option value="private">Private (members only)</option>
+      <option value="link_invite">Link-invite (anyone with the URL can request)</option>
+      <option value="public">Public (browsable + joinable)</option>
+    </select>
+  </p>
+  <p><input type="submit" value="Create"></p>
+</form>
+{% endblock %}
