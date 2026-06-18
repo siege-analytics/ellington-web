@@ -150,6 +150,38 @@ class RuleDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "need the Pedagogue role")
 
+    def test_source_locator_renders_page_and_filename(self):
+        """#136: 'Page N of <book>' when both source_page and source_pdf_filename set."""
+        self.rule.anchor = "voicing must include the 3rd"
+        self.rule.source_page = 42
+        self.rule.source_pdf_filename = "joe-pass-chord-solos.pdf"
+        self.rule.save()
+        self.client.force_login(self.stranger)
+        response = self.client.get(self.url)
+        self.assertContains(response, "Page 42 of joe-pass-chord-solos.pdf")
+
+    def test_source_locator_page_only_when_filename_missing(self):
+        """#136: 'Page N' alone when source_pdf_filename is empty."""
+        self.rule.anchor = "voicing must include the 3rd"
+        self.rule.source_page = 7
+        self.rule.source_pdf_filename = ""
+        self.rule.save()
+        self.client.force_login(self.stranger)
+        response = self.client.get(self.url)
+        self.assertContains(response, "Page 7")
+        # No "Page N of …" — the " of " infix should not appear next to the page.
+        self.assertNotContains(response, "Page 7 of")
+
+    def test_source_locator_omitted_when_both_null(self):
+        """#136: no locator line when both source_page and source_pdf_filename absent."""
+        self.rule.anchor = "voicing must include the 3rd"
+        self.rule.source_page = None
+        self.rule.source_pdf_filename = ""
+        self.rule.save()
+        self.client.force_login(self.stranger)
+        response = self.client.get(self.url)
+        self.assertNotContains(response, "source-locator")
+
     def test_post_accept_creates_response(self):
         self.client.force_login(self.trevor)
         response = self.client.post(

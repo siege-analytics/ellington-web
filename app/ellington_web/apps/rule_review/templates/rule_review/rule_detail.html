@@ -20,7 +20,11 @@
   <h3>Anchor</h3>
   <div class="anchor-quote">
     {{ rule.anchor }}
-    {% if rule.source_page %}<div class="meta">Page {{ rule.source_page }}</div>{% endif %}
+    {% if rule.source_page and rule.source_pdf_filename %}
+      <div class="meta source-locator">Page {{ rule.source_page }} of {{ rule.source_pdf_filename }}</div>
+    {% elif rule.source_page %}
+      <div class="meta source-locator">Page {{ rule.source_page }}</div>
+    {% endif %}
   </div>
   {% endif %}
 

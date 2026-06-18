@@ -273,6 +273,7 @@ class Command(BaseCommand):
                 "falsifier": entry.get("falsifier") or "",
                 "anchor": entry.get("anchor") or "",
                 "source_page": entry.get("source_page"),
+                "source_pdf_filename": (entry.get("pdf_filename") or "").strip(),
                 "is_active": True,
             },
         )
