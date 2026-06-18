@@ -1,0 +1,33 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Messages — Ellington</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <style>
+    body { max-width: 720px; margin: 2em auto; padding: 0 1em; font-family: var(--font-body); }
+    h1 { font-family: var(--font-display); }
+    .conv { padding: 1em 0; border-bottom: 1px solid var(--bg-border); }
+    .meta { color: var(--fg-muted); font-size: 0.9em; }
+    .unread-badge {
+      display: inline-block; background: var(--chord-dom7); color: white;
+      padding: 0.1em 0.5em; border-radius: 10px; font-size: 0.8em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Messages</h1>
+
+  {% for c in conversations %}
+    <div class="conv">
+      <a href="{% url 'dm_thread' c.partner.username %}"><strong>{{ c.partner.username }}</strong></a>
+      {% if c.unread_count %}<span class="unread-badge">{{ c.unread_count }} unread</span>{% endif %}
+      <div class="meta">{{ c.last_msg.sent_at|timesince }} ago</div>
+      <div>{{ c.last_msg.body|truncatechars:120 }}</div>
+    </div>
+  {% empty %}
+    <p><em>No conversations yet. Open another user's profile to start one.</em></p>
+  {% endfor %}
+</body>
+</html>

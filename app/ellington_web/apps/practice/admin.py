@@ -9,7 +9,11 @@ from .models import (
     PracticeSession,
     Recording,
     RecordingComment,
+    RecordingCommentAcknowledgement,
     RecordingShare,
+    Studio,
+    StudioMember,
+    TeacherStudent,
 )
 
 
@@ -146,3 +150,39 @@ class RecordingCommentAdmin(admin.ModelAdmin):
     @admin.display(boolean=True, description="deleted")
     def is_deleted(self, obj):
         return obj.deleted_at is not None
+
+
+@admin.register(Studio)
+class StudioAdmin(admin.ModelAdmin):
+    list_display = ("slug", "name", "owner", "visibility", "created_at")
+    list_filter = ("visibility",)
+    search_fields = ("slug", "name")
+    readonly_fields = ("created_at", "updated_at")
+    raw_id_fields = ("owner",)
+    prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(StudioMember)
+class StudioMemberAdmin(admin.ModelAdmin):
+    list_display = ("studio", "user", "role", "invited_by", "joined_at")
+    list_filter = ("role",)
+    search_fields = ("studio__slug", "user__username")
+    readonly_fields = ("joined_at",)
+    raw_id_fields = ("studio", "user", "invited_by")
+
+
+@admin.register(TeacherStudent)
+class TeacherStudentAdmin(admin.ModelAdmin):
+    list_display = ("teacher", "student", "studio", "created_at", "ended_at")
+    list_filter = ("ended_at",)
+    search_fields = ("teacher__username", "student__username")
+    readonly_fields = ("created_at",)
+    raw_id_fields = ("teacher", "student", "studio")
+
+
+@admin.register(RecordingCommentAcknowledgement)
+class RecordingCommentAcknowledgementAdmin(admin.ModelAdmin):
+    list_display = ("comment", "acknowledged_by", "acknowledged_at")
+    search_fields = ("acknowledged_by__username", "note")
+    readonly_fields = ("acknowledged_at",)
+    raw_id_fields = ("comment", "acknowledged_by")

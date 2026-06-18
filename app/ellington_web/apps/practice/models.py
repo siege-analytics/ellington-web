@@ -626,3 +626,229 @@ class RecordingComment(models.Model):
     @property
     def display_body(self) -> str:
         return "[deleted]" if self.is_deleted else self.body
+
+
+# ---------------------------------------------------------------------------
+# Studios (epic #96 sub-ticket f / #120)
+# ---------------------------------------------------------------------------
+
+
+class StudioVisibility(models.TextChoices):
+    PRIVATE = "private", "Private (members only)"
+    LINK_INVITE = "link_invite", "Link-invite (anyone with the URL can request to join)"
+    PUBLIC = "public", "Public (browsable + joinable)"
+
+
+class StudioRole(models.TextChoices):
+    MEMBER = "member", "Member"
+    MODERATOR = "moderator", "Moderator"
+    BANNED = "banned", "Banned"
+
+
+class Studio(models.Model):
+    """A multi-user practice container — the digital equivalent of
+    "Wednesday-night practice group with teacher Steve".
+
+    Visibility controls discovery + join:
+    - private: only listed members can see
+    - link_invite: anyone with the URL can request to join
+    - public: browsable + auto-join
+
+    Owner is preserved on user delete via PROTECT — the studio
+    doesn't disappear if the owner leaves the system. Ownership
+    transfer is a v2 affordance.
+    """
+
+    slug = models.SlugField(
+        max_length=64,
+        unique=True,
+        help_text="URL-safe identifier (lowercase, hyphens, no spaces).",
+    )
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="studios_owned",
+        help_text="The studio's founder + permanent owner."
+        " PROTECT — owner row outlives the studio's existence.",
+    )
+    visibility = models.CharField(
+        max_length=16,
+        choices=StudioVisibility.choices,
+        default=StudioVisibility.PRIVATE,
+        db_index=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"Studio({self.slug})"
+
+
+class StudioMember(models.Model):
+    """One user's membership in one Studio.
+
+    Roles: member (default), moderator (manage + invite), banned
+    (kept on row so re-joining requires unban). Unique per (studio, user).
+    """
+
+    studio = models.ForeignKey(
+        Studio,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="studio_memberships",
+        help_text="The member. PROTECT — preserve audit trail for"
+        " moderation history.",
+    )
+    role = models.CharField(
+        max_length=16,
+        choices=StudioRole.choices,
+        default=StudioRole.MEMBER,
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="studio_invites_issued",
+    )
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["studio", "user__username"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["studio", "user"],
+                name="studiomember_studio_user_unique",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "studio"], name="studiomember_user_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"StudioMember({self.studio_id}:{self.user_id}:{self.role})"
+
+
+# ---------------------------------------------------------------------------
+# Teacher / Student (epic #96 sub-ticket i / #126)
+# ---------------------------------------------------------------------------
+
+
+class TeacherStudent(models.Model):
+    """One teacher → student relationship, optionally scoped to a Studio.
+
+    A teacher can have many students; a student can have many teachers
+    (e.g. main instrument + theory). The optional ``studio`` FK scopes
+    the relationship to a specific practice group — when null, the
+    relationship is global.
+
+    ``ended_at`` retains the row after the relationship ends so historical
+    acknowledgement audit survives. Unique constraint covers the
+    active-row case; ended rows can re-appear with a new instance.
+    """
+
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="teaches",
+        help_text="The teacher in the relationship.",
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="studies_with",
+        help_text="The student being taught.",
+    )
+    studio = models.ForeignKey(
+        Studio,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="teacher_student_relationships",
+        help_text="Optional Studio scope. When set, the relationship"
+        " is visible to other members of the Studio.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            # Active (non-ended) row per (teacher, student, studio)
+            models.UniqueConstraint(
+                fields=["teacher", "student", "studio"],
+                condition=models.Q(ended_at__isnull=True),
+                name="teacherstudent_active_unique",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(teacher=models.F("student")),
+                name="teacherstudent_no_self_teach",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["student", "teacher"],
+                name="teacherstudent_student_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        marker = "(ended)" if self.ended_at else ""
+        return f"TeacherStudent({self.teacher_id}→{self.student_id}{marker})"
+
+    @property
+    def is_active(self) -> bool:
+        return self.ended_at is None
+
+
+class RecordingCommentAcknowledgement(models.Model):
+    """Read receipt for a teacher's RecordingComment on their student's
+    Recording.
+
+    Required by sub-ticket (i): teacher comments can't be dismissed by
+    the student until acknowledged. Tracked here rather than on the
+    comment itself so future "acknowledge-with-note" expansion has a
+    landing pad.
+    """
+
+    comment = models.ForeignKey(
+        "RecordingComment",
+        on_delete=models.CASCADE,
+        related_name="acknowledgements",
+    )
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="comment_acknowledgements",
+        help_text="The student (or other recipient) confirming they read"
+        " the teacher's comment.",
+    )
+    acknowledged_at = models.DateTimeField(auto_now_add=True)
+    note = models.TextField(
+        blank=True,
+        help_text="Optional reply note. Distinct from a comment reply"
+        " because it's an acknowledgement-with-context, not a thread"
+        " contribution.",
+    )
+
+    class Meta:
+        ordering = ["-acknowledged_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comment", "acknowledged_by"],
+                name="recordingcommentack_comment_user_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"RecordingCommentAcknowledgement(comment={self.comment_id} by={self.acknowledged_by_id})"

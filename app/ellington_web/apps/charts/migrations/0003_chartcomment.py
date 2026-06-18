@@ -14,7 +14,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("charts", "0001_initial"),
+        ("charts", "0002_chartimport"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -95,7 +95,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="chartcomment",
             constraint=models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(
                         song__isnull=False,
                         section__isnull=True,

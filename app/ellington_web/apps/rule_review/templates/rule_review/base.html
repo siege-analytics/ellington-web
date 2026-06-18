@@ -1,0 +1,80 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}Rule review — Ellington{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <style>
+    body { max-width: 1080px; margin: 2em auto; padding: 0 1em; font-family: var(--font-body); }
+    nav { border-bottom: 1px solid var(--bg-border); padding-bottom: 0.5em; margin-bottom: 1.5em; }
+    nav a { margin-right: 1em; }
+    h1 { margin-top: 0.5em; font-family: var(--font-display); }
+    .messages { list-style: none; padding: 0; }
+    .messages li {
+      background: #eef; padding: 0.5em 1em;
+      border-left: 3px solid #66f; margin-bottom: 0.5em;
+    }
+    .messages li.error { background: #fee; border-left-color: var(--chord-dim7); }
+    .messages li.success { background: #efe; border-left-color: var(--chord-sus); }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: 0.4em 0.6em; border-bottom: 1px solid #eee; vertical-align: top; }
+    .empty-state { padding: 2em; text-align: center; color: var(--fg-muted); }
+    .helptext { color: var(--fg-muted); font-size: 0.9em; display: block; margin-top: 0.2em; }
+    button, input[type="submit"] {
+      padding: 0.5em 1em; background: var(--link); color: white;
+      border: none; border-radius: 3px; cursor: pointer;
+    }
+    button.destructive { background: var(--chord-dim7); }
+    form p { margin: 1em 0; }
+    form label { display: block; font-weight: bold; margin-bottom: 0.2em; }
+    form input[type="text"], form select, form textarea {
+      width: 100%; padding: 0.4em; border: 1px solid #aaa; border-radius: 3px; font: inherit;
+    }
+    .badge {
+      display: inline-block; padding: 0.15em 0.6em;
+      border-radius: 10px; font-size: 0.85em; font-weight: bold;
+    }
+    .badge--accept { background: #efe; color: #060; }
+    .badge--close_but { background: #fea; color: #850; }
+    .badge--reject { background: #fee; color: #900; }
+    .rule-card {
+      background: var(--bg-elev); border: 1px solid var(--bg-border);
+      border-radius: 4px; padding: 1em; margin-bottom: 1em;
+    }
+    .rule-card pre {
+      background: #fafafa; border-radius: 3px; padding: 0.5em;
+      overflow-x: auto; font-size: 0.85em;
+    }
+    .anchor-quote {
+      background: #fffbe6; border-left: 4px solid var(--chord-maj7);
+      padding: 0.5em 1em; margin: 0.5em 0; font-style: italic;
+    }
+    .comment {
+      border-left: 3px solid var(--bg-border); padding: 0.5em 1em;
+      margin: 0.5em 0;
+    }
+    .comment.reply { margin-left: 2em; }
+    .comment .meta { color: var(--fg-muted); font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="{% url 'rule_review:rule_list' %}">All rules</a>
+    {% if user.is_staff %}<a href="{% url 'rule_review:admin_queue' %}">Review queue</a>{% endif %}
+    {% if user.is_authenticated %}
+      <span style="float:right">Signed in as <strong>{{ user.username }}</strong></span>
+    {% endif %}
+  </nav>
+
+  {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% block content %}{% endblock %}
+</body>
+</html>

@@ -20,6 +20,8 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 
+from apps.core import views as core_views
+
 
 urlpatterns = [
     path("grappelli/", include("grappelli.urls")),  # Grappelli URLs
@@ -31,6 +33,13 @@ urlpatterns = [
     path("critique/", include("apps.styles.urls")),
     path("practice/", include("apps.practice.urls")),
     path("charts/", include("apps.charts.urls")),
+    path("rule-review/", include("apps.rule_review.urls")),
+    path("users/<str:username>/", core_views.user_profile, name="user_profile"),
+    path("users/<str:username>/follow/", core_views.follow_user, name="follow_user"),
+    path("users/<str:username>/unfollow/", core_views.unfollow_user, name="unfollow_user"),
+    path("feed/", core_views.feed, name="feed"),
+    path("messages/", core_views.dm_inbox, name="dm_inbox"),
+    path("messages/<str:username>/", core_views.dm_thread, name="dm_thread"),
 ]
 
 # In dev, Daphne serves user-uploaded recordings from MEDIA_ROOT. In

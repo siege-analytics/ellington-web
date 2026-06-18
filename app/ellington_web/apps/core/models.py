@@ -272,3 +272,107 @@ class AccountDeletionAudit(models.Model):
 
     def __str__(self) -> str:
         return f"AccountDeletionAudit({self.deleted_username} @ {self.deleted_at:%Y-%m-%d})"
+
+
+# ---------------------------------------------------------------------------
+# Follow (epic #96 sub-ticket h / #122)
+# ---------------------------------------------------------------------------
+
+
+class Follow(models.Model):
+    """One-directional follow.
+
+    ``follower`` follows ``followed``. No reciprocity required. Self-
+    follow rejected at the model layer via the
+    ``follow_no_self_follow`` constraint.
+
+    PROTECT on both FKs so the follow audit trail survives via the
+    sentinel-user anonymize path. Deletion of either side via
+    `delete_user_account` repoints both ends through the sentinel.
+    """
+
+    follower = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="following",
+        help_text="The user doing the following.",
+    )
+    followed = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="followers",
+        help_text="The user being followed.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["follower", "followed"],
+                name="follow_follower_followed_unique",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(follower=models.F("followed")),
+                name="follow_no_self_follow",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["followed", "-created_at"],
+                name="follow_followed_recent_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Follow({self.follower_id} → {self.followed_id})"
+
+
+# ---------------------------------------------------------------------------
+# DirectMessage (epic #96 sub-ticket g / #124)
+# ---------------------------------------------------------------------------
+
+
+class DirectMessage(models.Model):
+    """1:1 message between two users. Plain text v1.
+
+    PROTECT on both FKs so deletion-via-sentinel keeps the message
+    visible to the surviving participant. Read receipt (`read_at`)
+    captured when the recipient opens the thread.
+    """
+
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="dms_sent",
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="dms_received",
+    )
+    body = models.TextField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        ordering = ["sent_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(sender=models.F("recipient")),
+                name="dm_no_self_send",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["sender", "recipient", "sent_at"],
+                name="dm_pair_chrono_idx",
+            ),
+            models.Index(
+                fields=["recipient", "read_at"],
+                name="dm_recipient_unread_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"DirectMessage({self.sender_id} → {self.recipient_id} @ {self.sent_at:%Y-%m-%d %H:%M})"

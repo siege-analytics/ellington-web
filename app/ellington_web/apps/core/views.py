@@ -198,3 +198,242 @@ def self_delete_account(request: HttpRequest) -> HttpResponse:
 def account_deleted(request: HttpRequest) -> HttpResponse:
     """Goodbye page at /accounts/deleted/."""
     return render(request, "core/account_deleted.html")
+
+
+# ---------------------------------------------------------------------------
+# Follow / feed / user profile (epic #96 sub-ticket h / #122)
+# ---------------------------------------------------------------------------
+
+
+@require_http_methods(["GET"])
+def user_profile(request: HttpRequest, username: str) -> HttpResponse:
+    """Public profile at /users/<username>/.
+
+    Shows public Studios + follower/following counts + follow button
+    state. Private content (private studios, sharing-only recordings)
+    is gated and not surfaced.
+    """
+    from django.shortcuts import get_object_or_404
+
+    from apps.practice.models import Studio, StudioVisibility
+
+    from .models import Follow
+
+    target = get_object_or_404(User, username=username, is_active=True)
+
+    public_studios = list(
+        Studio.objects.filter(
+            owner=target, visibility=StudioVisibility.PUBLIC,
+        )
+    )
+
+    follower_count = Follow.objects.filter(followed=target).count()
+    following_count = Follow.objects.filter(follower=target).count()
+
+    is_self = (
+        request.user.is_authenticated and request.user.pk == target.pk
+    )
+    am_following = False
+    if request.user.is_authenticated and not is_self:
+        am_following = Follow.objects.filter(
+            follower=request.user, followed=target,
+        ).exists()
+
+    return render(request, "core/user_profile.html", {
+        "target": target,
+        "public_studios": public_studios,
+        "follower_count": follower_count,
+        "following_count": following_count,
+        "is_self": is_self,
+        "am_following": am_following,
+    })
+
+
+@require_http_methods(["POST"])
+def follow_user(request: HttpRequest, username: str) -> HttpResponse:
+    """Follow a user. POST-only. Refuses self-follow."""
+    from django.shortcuts import get_object_or_404
+
+    from .models import Follow
+
+    if not request.user.is_authenticated:
+        from django.shortcuts import resolve_url
+        return redirect(f"{resolve_url('login')}?next=/users/{username}/")
+
+    target = get_object_or_404(User, username=username, is_active=True)
+    if target.pk == request.user.pk:
+        messages.error(request, "You can't follow yourself.")
+        return redirect("core:user_profile", username=username)
+
+    Follow.objects.get_or_create(follower=request.user, followed=target)
+    messages.success(request, f"Following {target.username}.")
+    return redirect("core:user_profile", username=username)
+
+
+@require_http_methods(["POST"])
+def unfollow_user(request: HttpRequest, username: str) -> HttpResponse:
+    """Unfollow. POST-only. Idempotent."""
+    from django.shortcuts import get_object_or_404
+
+    from .models import Follow
+
+    if not request.user.is_authenticated:
+        return redirect("core:user_profile", username=username)
+
+    target = get_object_or_404(User, username=username)
+    Follow.objects.filter(follower=request.user, followed=target).delete()
+    messages.info(request, f"Unfollowed {target.username}.")
+    return redirect("core:user_profile", username=username)
+
+
+@require_http_methods(["GET"])
+def feed(request: HttpRequest) -> HttpResponse:
+    """Followed-users activity feed at /feed/.
+
+    v1 surface aggregates:
+    - Public Studios created by followed users (recent first)
+    - RuleComments by followed users (excluding deleted)
+
+    Polled on page load. Real-time push is a v2 affordance.
+    """
+    if not request.user.is_authenticated:
+        from django.shortcuts import resolve_url
+        return redirect(f"{resolve_url('login')}?next=/feed/")
+
+    from apps.practice.models import Studio, StudioVisibility
+    from apps.rule_review.models import RuleComment
+
+    from .models import Follow
+
+    followed_ids = Follow.objects.filter(
+        follower=request.user,
+    ).values_list("followed_id", flat=True)
+
+    recent_studios = (
+        Studio.objects.filter(
+            owner_id__in=followed_ids,
+            visibility=StudioVisibility.PUBLIC,
+        )
+        .select_related("owner")
+        .order_by("-created_at")[:20]
+    )
+
+    recent_comments = (
+        RuleComment.objects.filter(
+            author_id__in=followed_ids, deleted_at__isnull=True,
+        )
+        .select_related("author", "rule")
+        .order_by("-created_at")[:20]
+    )
+
+    return render(request, "core/feed.html", {
+        "recent_studios": recent_studios,
+        "recent_comments": recent_comments,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Direct messages (epic #96 sub-ticket g / #124)
+# ---------------------------------------------------------------------------
+
+
+@require_http_methods(["GET"])
+def dm_inbox(request: HttpRequest) -> HttpResponse:
+    """Inbox at /messages/. Distinct conversation partners + last
+    message preview + unread count."""
+    from django.db.models import Max, Q
+
+    from .models import DirectMessage
+
+    if not request.user.is_authenticated:
+        from django.shortcuts import resolve_url
+        return redirect(f"{resolve_url('login')}?next=/messages/")
+
+    # Partners: any other user who has either sent to me or received from me
+    sent_to_others = (
+        DirectMessage.objects
+        .filter(sender=request.user)
+        .values_list("recipient_id", flat=True)
+        .distinct()
+    )
+    received_from_others = (
+        DirectMessage.objects
+        .filter(recipient=request.user)
+        .values_list("sender_id", flat=True)
+        .distinct()
+    )
+    partner_ids = set(sent_to_others) | set(received_from_others)
+
+    conversations = []
+    for partner_id in partner_ids:
+        last_msg = (
+            DirectMessage.objects
+            .filter(
+                Q(sender=request.user, recipient_id=partner_id)
+                | Q(sender_id=partner_id, recipient=request.user)
+            )
+            .order_by("-sent_at")
+            .first()
+        )
+        unread_count = DirectMessage.objects.filter(
+            sender_id=partner_id, recipient=request.user,
+            read_at__isnull=True,
+        ).count()
+        partner = User.objects.filter(pk=partner_id).first()
+        if partner and last_msg:
+            conversations.append({
+                "partner": partner,
+                "last_msg": last_msg,
+                "unread_count": unread_count,
+            })
+
+    conversations.sort(key=lambda c: c["last_msg"].sent_at, reverse=True)
+    return render(request, "core/dm_inbox.html", {"conversations": conversations})
+
+
+@require_http_methods(["GET", "POST"])
+def dm_thread(request: HttpRequest, username: str) -> HttpResponse:
+    """1:1 thread at /messages/<username>/. POST sends a new message;
+    GET marks all incoming as read."""
+    from django.db.models import Q
+    from django.shortcuts import get_object_or_404
+    from django.utils import timezone
+
+    from .models import DirectMessage
+
+    if not request.user.is_authenticated:
+        from django.shortcuts import resolve_url
+        return redirect(f"{resolve_url('login')}?next=/messages/{username}/")
+
+    partner = get_object_or_404(User, username=username, is_active=True)
+    if partner.pk == request.user.pk:
+        messages.error(request, "You can't message yourself.")
+        return redirect("dm_inbox")
+
+    if request.method == "POST":
+        body = (request.POST.get("body") or "").strip()
+        if not body:
+            messages.error(request, "message can't be empty")
+            return redirect("dm_thread", username=username)
+        DirectMessage.objects.create(
+            sender=request.user, recipient=partner, body=body,
+        )
+        return redirect("dm_thread", username=username)
+
+    # Mark all incoming from partner as read
+    DirectMessage.objects.filter(
+        sender=partner, recipient=request.user, read_at__isnull=True,
+    ).update(read_at=timezone.now())
+
+    thread = list(
+        DirectMessage.objects.filter(
+            Q(sender=request.user, recipient=partner)
+            | Q(sender=partner, recipient=request.user)
+        )
+        .select_related("sender", "recipient")
+        .order_by("sent_at")
+    )
+
+    return render(request, "core/dm_thread.html", {
+        "partner": partner, "thread": thread,
+    })

@@ -1,0 +1,44 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Feed — Ellington</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <style>
+    body { max-width: 720px; margin: 2em auto; padding: 0 1em; font-family: var(--font-body); }
+    h1 { font-family: var(--font-display); }
+    .item { padding: 1em 0; border-bottom: 1px solid var(--bg-border); }
+    .meta { color: var(--fg-muted); font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>Your feed</h1>
+
+  {% if recent_studios %}
+  <h2>Recent studios</h2>
+  {% for s in recent_studios %}
+    <div class="item">
+      <a href="{% url 'practice:studio_detail' s.slug %}">{{ s.name }}</a>
+      <div class="meta">by {{ s.owner.username }} · {{ s.created_at|timesince }} ago</div>
+    </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if recent_comments %}
+  <h2>Recent rule discussions</h2>
+  {% for c in recent_comments %}
+    <div class="item">
+      <strong>{{ c.author.username }}</strong> on
+      <a href="{% url 'rule_review:rule_detail' c.rule.pk %}">{{ c.rule.name|truncatechars:60 }}</a>
+      <div class="meta">{{ c.created_at|timesince }} ago</div>
+      <div>{{ c.body|truncatechars:200 }}</div>
+    </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if not recent_studios and not recent_comments %}
+  <p><em>Nothing yet. Follow some people to see their activity here.</em></p>
+  {% endif %}
+</body>
+</html>
