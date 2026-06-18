@@ -135,3 +135,138 @@ class PracticeSessionForm(forms.Form):
 
 
 __all__ = ["PracticeSessionForm"]
+
+
+# ---------------------------------------------------------------------------
+# Recording sharing form (epic #96 sub-ticket b / #108)
+# ---------------------------------------------------------------------------
+
+
+class ShareRecordingForm(forms.Form):
+    """Recording-sharing form. Two paths:
+
+    - ``recipient`` (existing user, looked up by email or username) →
+      RecordingShare with recipient set, no Invite
+    - ``recipient_email`` (outsider) → Invite + RecordingShare with
+      recipient=null, invite=<the invite>
+
+    Exactly one path must be filled.
+    """
+
+    recipient_lookup = forms.CharField(
+        required=False,
+        max_length=255,
+        label="Share with existing user (email or username)",
+        help_text="If they already have an Ellington account, type their"
+        " email or username here.",
+    )
+    recipient_email = forms.EmailField(
+        required=False,
+        label="Or invite by email",
+        help_text="Type their email to send a fresh invitation.",
+    )
+    recipient_name = forms.CharField(
+        required=False,
+        max_length=128,
+        label="Their name (optional)",
+        help_text="Shown in the invitation email if you're inviting"
+        " someone new.",
+    )
+    share_note = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 3}),
+        required=False,
+        max_length=2000,
+        label="Note to recipient (optional)",
+    )
+
+    def __init__(self, *args, sharer=None, recording=None, **kwargs):
+        # Stash for clean() / save() — set by the view.
+        super().__init__(*args, **kwargs)
+        self.sharer = sharer
+        self.recording = recording
+
+    def clean(self):
+        from django.contrib.auth import get_user_model
+
+        cd = super().clean()
+        lookup = (cd.get("recipient_lookup") or "").strip()
+        email = (cd.get("recipient_email") or "").strip()
+
+        if lookup and email:
+            raise forms.ValidationError(
+                "pick existing user OR invite by email — not both"
+            )
+        if not lookup and not email:
+            raise forms.ValidationError(
+                "pick existing user OR enter an invite email"
+            )
+
+        if lookup:
+            User = get_user_model()
+            recipient = (
+                User.objects.filter(email__iexact=lookup).first()
+                or User.objects.filter(username__iexact=lookup).first()
+            )
+            if recipient is None:
+                raise forms.ValidationError(
+                    f"no existing user matches {lookup!r} —"
+                    " try inviting by email instead"
+                )
+            if self.sharer and recipient.pk == self.sharer.pk:
+                raise forms.ValidationError(
+                    "you can't share a recording with yourself"
+                )
+            cd["_resolved_recipient"] = recipient
+
+        return cd
+
+    def save(self):
+        """Create the RecordingShare (and maybe Invite). Returns
+        ``(share, invite_or_none)``. Caller is responsible for sending
+        the appropriate email.
+        """
+        import secrets
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .models import Invite, RecordingShare
+
+        if not self.is_valid():
+            raise ValueError("save() called on invalid form")
+        if not self.sharer or not self.recording:
+            raise ValueError("ShareRecordingForm needs sharer + recording")
+
+        cd = self.cleaned_data
+        share_note = (cd.get("share_note") or "").strip()
+        recipient = cd.get("_resolved_recipient")
+
+        if recipient is not None:
+            share = RecordingShare.objects.create(
+                recording=self.recording,
+                sharer=self.sharer,
+                recipient=recipient,
+                share_note=share_note,
+            )
+            return share, None
+
+        # Invite path
+        email = cd["recipient_email"].strip()
+        token = secrets.token_urlsafe(32)
+        invite = Invite.objects.create(
+            token=token,
+            inviter=self.sharer,
+            email=email,
+            name_hint=(cd.get("recipient_name") or "").strip(),
+            expires_at=timezone.now() + timedelta(days=30),
+        )
+        share = RecordingShare.objects.create(
+            recording=self.recording,
+            sharer=self.sharer,
+            invite=invite,
+            share_note=share_note,
+        )
+        return share, invite
+
+
+__all__ = list(__all__) + ["ShareRecordingForm"]

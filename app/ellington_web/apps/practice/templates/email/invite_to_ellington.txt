@@ -1,0 +1,16 @@
+{% autoescape off %}Hi{% if invite.name_hint %} {{ invite.name_hint }}{% endif %},
+
+{{ sharer.username }} invited you to Ellington — a practice and feedback web app for jazz guitarists — and shared a recording with you.
+
+{% if share.share_note %}They left a note:
+
+  "{{ share.share_note }}"
+
+{% endif %}Sign up to listen + comment:
+
+{{ accept_url }}
+
+This link expires in 30 days.
+
+— Ellington
+{% endautoescape %}

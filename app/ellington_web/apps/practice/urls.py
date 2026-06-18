@@ -19,4 +19,25 @@ urlpatterns = [
         views.recording_reanalyze,
         name="recording_reanalyze",
     ),
+    path(
+        "recordings/<int:recording_pk>/share/",
+        views.share_recording,
+        name="share_recording",
+    ),
+    path("shared/", views.shared_with_me, name="shared_with_me"),
+    path(
+        "recordings/<int:recording_pk>/comments/add/",
+        views.add_recording_comment,
+        name="add_recording_comment",
+    ),
+    path(
+        "comments/<int:comment_pk>/delete/",
+        views.delete_recording_comment,
+        name="delete_recording_comment",
+    ),
+    path(
+        "comments/<int:comment_pk>/edit/",
+        views.edit_recording_comment,
+        name="edit_recording_comment",
+    ),
 ]

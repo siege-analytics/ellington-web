@@ -438,3 +438,107 @@ class ChartImport(models.Model):
 
     def __str__(self) -> str:
         return f"ChartImport({self.pk}:{self.status})"
+
+
+# ---------------------------------------------------------------------------
+# Chart comments (epic #96 sub-ticket e / #114)
+# ---------------------------------------------------------------------------
+
+
+class ChartComment(models.Model):
+    """One comment anchored to a Song / Section / ChordEvent.
+
+    Exactly one of the three anchor FKs must be set; enforced by a
+    Meta.constraints CheckConstraint. Threading via ``parent``
+    self-FK. Soft-delete preserves thread shape.
+
+    Permission model is simpler than RecordingComment's owner+share
+    join because Songbooks are a global catalog — any authenticated
+    user reads / writes. Moderation (soft-delete by non-author) is
+    restricted to Admin (User.is_staff) or Pedagogue
+    (apps.core.roles.is_pedagogue).
+    """
+
+    song = models.ForeignKey(
+        "charts.Song",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="comments",
+        help_text="Anchor: whole-song comment. Exactly one anchor must be set.",
+    )
+    section = models.ForeignKey(
+        "charts.Section",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="comments",
+        help_text="Anchor: per-section / per-form comment.",
+    )
+    chord_event = models.ForeignKey(
+        "charts.ChordEvent",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="comments",
+        help_text="Anchor: per-chord comment.",
+    )
+
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="chart_comments",
+        help_text="Comment author. PROTECT — sentinel-anonymize on"
+        " user delete via apps.core.delete_user_account.",
+    )
+    body = models.TextField()
+
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="replies",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    edited_at = models.DateTimeField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            # Exactly one of song/section/chord_event must be set.
+            # Postgres-portable expression using a sum of IS NOT NULL
+            # casts. SQLite (used in tests) handles the same shape.
+            models.CheckConstraint(
+                name="chartcomment_one_anchor",
+                check=(
+                    models.Q(song__isnull=False, section__isnull=True, chord_event__isnull=True)
+                    | models.Q(song__isnull=True, section__isnull=False, chord_event__isnull=True)
+                    | models.Q(song__isnull=True, section__isnull=True, chord_event__isnull=False)
+                ),
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["song", "created_at"], name="chartcomment_song_idx"),
+            models.Index(fields=["section", "created_at"], name="chartcomment_section_idx"),
+            models.Index(fields=["chord_event", "created_at"], name="chartcomment_chord_idx"),
+        ]
+
+    def __str__(self) -> str:
+        anchor = (
+            f"song={self.song_id}" if self.song_id
+            else f"section={self.section_id}" if self.section_id
+            else f"chord_event={self.chord_event_id}"
+        )
+        marker = "(deleted) " if self.deleted_at else ""
+        return f"ChartComment({marker}{self.author_id} on {anchor})"
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    @property
+    def display_body(self) -> str:
+        return "[deleted]" if self.is_deleted else self.body

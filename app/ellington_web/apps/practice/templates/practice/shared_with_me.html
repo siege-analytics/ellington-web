@@ -1,0 +1,38 @@
+{% extends "practice/base.html" %}
+
+{% block title %}Shared with me — Ellington{% endblock %}
+
+{% block content %}
+<h1>Shared with me</h1>
+
+{% if shares %}
+<table>
+  <thead>
+    <tr>
+      <th>From</th>
+      <th>Recording</th>
+      <th>Note</th>
+      <th>Shared</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for share in shares %}
+    <tr>
+      <td>{{ share.sharer.username }}</td>
+      <td>
+        <a href="{% url 'practice:session_detail' share.recording.session_id %}">
+          Recording in {{ share.recording.session.song|default:"session" }}
+        </a>
+      </td>
+      <td>{{ share.share_note|default:"—"|truncatechars:80 }}</td>
+      <td>{{ share.shared_at|date:"Y-m-d H:i" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+  <p>Nothing's been shared with you yet.</p>
+</div>
+{% endif %}
+{% endblock %}

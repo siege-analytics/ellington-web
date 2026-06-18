@@ -1,0 +1,18 @@
+{% extends "email/_base.html" %}
+
+{% block title %}A recording was shared with you on Ellington{% endblock %}
+
+{% block body %}
+<p>Hi {{ share.recipient.username }},</p>
+
+<p><strong>{{ sharer.username }}</strong> shared a recording with you on Ellington.</p>
+
+{% if share.share_note %}
+<p>They left a note:</p>
+<blockquote style="border-left: 3px solid #d9cdb3; margin: 1em 0; padding: 0.5em 1em; color: #555;">
+  {{ share.share_note }}
+</blockquote>
+{% endif %}
+
+<p><a href="{{ site_origin }}/practice/shared/">See it on Ellington →</a></p>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "charts/base.html" %}
+
+{% block title %}My imports — Ellington{% endblock %}
+
+{% block content %}
+<h1>My PDF imports</h1>
+
+<form method="get" style="margin-bottom: 1em;">
+  <label for="status">Filter by status:</label>
+  <select id="status" name="status" onchange="this.form.submit()">
+    <option value="">All</option>
+    {% for value, label in statuses %}
+      <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+{% if imports %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Songbook</th>
+      <th>Status</th>
+      <th>Pages</th>
+      <th>Submitted</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ci in imports %}
+    <tr>
+      <td><a href="{% url 'charts:import_detail' ci.pk %}">{{ ci.pk }}</a></td>
+      <td>{{ ci.source_songbook.title|default:"(none)" }}</td>
+      <td><span class="badge badge--{{ ci.status }}">{{ ci.get_status_display }}</span></td>
+      <td>
+        {% if ci.page_count %}
+          {{ ci.page_count }} pages,
+          {{ ci.pages_succeeded }} succeeded,
+          {{ ci.pages_failed }} failed
+        {% else %}
+          <em>(not yet processed)</em>
+        {% endif %}
+      </td>
+      <td>{{ ci.created_at|date:"Y-m-d H:i" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+  <p>No imports yet.</p>
+  <p><a href="{% url 'charts:upload_pdf' %}">Upload a PDF →</a></p>
+</div>
+{% endif %}
+{% endblock %}

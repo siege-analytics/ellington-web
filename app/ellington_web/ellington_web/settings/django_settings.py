@@ -39,6 +39,10 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "django.contrib.gis",
+    # Required by apps.engine_rules.EngineRule's ArrayField columns
+    # (quality_binding, applicability_reasons). The system check fails
+    # with postgres.E005 if ArrayField is used without this.
+    "django.contrib.postgres",
     "rest_framework",
     'rest_framework_gis',
     "locations",
@@ -46,6 +50,7 @@ INSTALLED_APPS = [
     "apps.styles",
     "apps.charts",
     "apps.practice",
+    "apps.engine_rules",
 ]
 
 MIDDLEWARE = [
@@ -177,6 +182,33 @@ MEDIA_ROOT = os.environ.get("MEDIA_ROOT", str(BASE_DIR / "media"))
 # auth login view.
 LOGIN_REDIRECT_URL = "/practice/sessions/"
 LOGIN_URL = "/accounts/login/"
+
+# Email — DreamHost SMTP per epic #96 sub-ticket (l) / #101. The
+# `dheeraj@dheerajchand.com` mailbox is reused from the Resume Generator
+# product (resume-generator-manifests PR #1 set the pattern). In DEBUG
+# (local dev) we default to the console backend so password resets and
+# invite emails print to stdout instead of accidentally hitting the
+# DreamHost SMTP. Production env supplies real EMAIL_* vars from the
+# ``ellington-config`` ConfigMap + ``ellington-email`` Secret.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.dreamhost.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = bool(int(os.environ.get("EMAIL_USE_TLS", "1")))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "FROM_EMAIL", "dheeraj@dheerajchand.com",
+)
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+# Reply-to is set per-message via the EmailMessage `reply_to` kwarg;
+# kept here for templates / management commands that want the canonical
+# value without rebuilding it.
+REPLY_TO_EMAIL = os.environ.get("REPLY_TO_EMAIL", "dheeraj.chand@gmail.com")
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
