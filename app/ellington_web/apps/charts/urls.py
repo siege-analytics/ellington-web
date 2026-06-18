@@ -19,4 +19,15 @@ urlpatterns = [
         views.chart_import_reprocess,
         name="import_reprocess",
     ),
+    path("comments/add/", views.add_chart_comment, name="add_chart_comment"),
+    path(
+        "comments/<int:comment_pk>/delete/",
+        views.delete_chart_comment,
+        name="delete_chart_comment",
+    ),
+    path(
+        "comments/<int:comment_pk>/edit/",
+        views.edit_chart_comment,
+        name="edit_chart_comment",
+    ),
 ]
