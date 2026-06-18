@@ -39,7 +39,7 @@ def _build_bundle(
     }
     rules_files = rules_files or {
         "masters/joe-pass/guitar-chords/derived/engine-rules.json": {
-            "rules": [
+            "engine_rules": [
                 {
                     "rule_id": "r-001",
                     "name": "Use rootless dom7 over II-V",
@@ -138,7 +138,7 @@ class TestSyncEngineRulesPolarity(TestCase):
         bundle_bytes = _build_bundle(
             rules_files={
                 "masters/joe-pass/guitar-chords/derived/engine-rules.json": {
-                    "rules": [
+                    "engine_rules": [
                         {
                             "rule_id": f"r-{pref}",
                             "name": "test",
@@ -232,7 +232,7 @@ class TestQualityBindingAliasTable(TestCase):
         bundle_bytes = _build_bundle(
             rules_files={
                 "masters/legacy-master/old-work/derived/engine-rules.json": {
-                    "rules": [
+                    "engine_rules": [
                         {
                             "rule_id": "r-leg",
                             "name": "legacy",
@@ -249,7 +249,34 @@ class TestQualityBindingAliasTable(TestCase):
         path.write_bytes(bundle_bytes)
         call_command("sync_engine_rules", "--bundle-path", str(path), stdout=StringIO())
         r = EngineRule.objects.get(rule_id="r-leg")
-        self.assertEqual(r.quality_binding, ["dom7", "m7"])
+        # seventh → dom7; min7 IS canonical (per firing-spec v0.1 §2),
+        # not aliased. Hostile-review correction on PR #99: my first
+        # draft mapped min7 → m7 which would have corrupted canonical
+        # data (m7 is not in the canonical token set).
+        self.assertEqual(r.quality_binding, ["dom7", "min7"])
+
+    def test_v01_path_layout_also_supported(self) -> None:
+        """Tolerant regex accepts the v0.1.0 ``plugin/data/masters-corpus/...``
+        layout in addition to v0.1.1+'s ``masters/...``. Hostile-review
+        B2 on PR #99.
+        """
+        Master.objects.get_or_create(slug="legacy-master", name="Legacy")
+        bundle_bytes = _build_bundle(
+            rules_files={
+                # v0.1.0 path prefix the plugin actually ships
+                "plugin/data/masters-corpus/legacy-master/work-a/derived/engine-rules.json": {
+                    "engine_rules": [
+                        {"rule_id": "rv01", "name": "v0.1 path", "preference": 1,
+                         "quality_binding": [], "when": {}, "then": {}},
+                    ]
+                }
+            }
+        )
+        path = Path("/tmp/test-engine-rules-v01-path.tar.gz")
+        path.write_bytes(bundle_bytes)
+        call_command("sync_engine_rules", "--bundle-path", str(path), stdout=StringIO())
+        # Rule landed despite the prefix mismatch with v0.1.1+ layout
+        self.assertTrue(EngineRule.objects.filter(rule_id="rv01").exists())
 
     def test_canonical_tokens_pass_through(self) -> None:
         # Post-#555 bundles ship with canonical tokens already; the
@@ -257,7 +284,7 @@ class TestQualityBindingAliasTable(TestCase):
         bundle_bytes = _build_bundle(
             rules_files={
                 "masters/legacy-master/canonical/derived/engine-rules.json": {
-                    "rules": [
+                    "engine_rules": [
                         {
                             "rule_id": "r-can",
                             "name": "canonical",
@@ -289,7 +316,7 @@ class TestDeactivationOfStaleRules(TestCase):
         first = _build_bundle(
             rules_files={
                 "masters/joe-pass/guitar-chords/derived/engine-rules.json": {
-                    "rules": [
+                    "engine_rules": [
                         {"rule_id": "keep", "name": "keep", "preference": 1,
                          "quality_binding": [], "when": {}, "then": {}},
                         {"rule_id": "drop", "name": "drop", "preference": 1,
@@ -316,7 +343,7 @@ class TestDeactivationOfStaleRules(TestCase):
             },
             rules_files={
                 "masters/joe-pass/guitar-chords/derived/engine-rules.json": {
-                    "rules": [
+                    "engine_rules": [
                         {"rule_id": "keep", "name": "keep", "preference": 1,
                          "quality_binding": [], "when": {}, "then": {}},
                     ]
@@ -333,6 +360,123 @@ class TestDeactivationOfStaleRules(TestCase):
         self.assertEqual(dropped.count(), 1)
         self.assertFalse(dropped.first().is_active)
         # Total kept (active) = 1 (from second bundle)
+        self.assertEqual(EngineRule.objects.filter(is_active=True).count(), 1)
+
+
+class TestMassDeactivationGuard(TestCase):
+    """The 50% sanity guard refuses syncs that would mass-deactivate rules.
+
+    Plugin-agent Q3 ask on PR #99. Catches the accidental empty-bundle
+    scenario; legitimate restructure still possible with --force.
+    """
+
+    def setUp(self) -> None:
+        Master.objects.create(slug="joe-pass", name="Joe Pass")
+
+    def _seed_n_rules(self, n: int) -> None:
+        """Populate N active rules via a synthetic first-sync."""
+        rules = [
+            {
+                "rule_id": f"r-{i}",
+                "name": f"rule {i}",
+                "preference": 1,
+                "quality_binding": [],
+                "when": {},
+                "then": {},
+            }
+            for i in range(n)
+        ]
+        bundle = _build_bundle(
+            manifest={
+                "schema_version": "0.1",
+                "bundle_version": "0.0.1",
+                "min_consumer_version": "0.1.0",
+                "plugin_commit_sha": "1" * 40,
+                "built_at": "2026-06-17T00:00:00+00:00",
+                "total_rules": n,
+                "masters": [],
+            },
+            rules_files={
+                "masters/joe-pass/big-corpus/derived/engine-rules.json": {
+                    "engine_rules": rules
+                }
+            },
+        )
+        path = Path("/tmp/test-engine-rules-seed.tar.gz")
+        path.write_bytes(bundle)
+        call_command("sync_engine_rules", "--bundle-path", str(path), stdout=StringIO())
+
+    def test_refuses_shrinking_bundle_without_force(self) -> None:
+        self._seed_n_rules(10)
+        # Sync with a near-empty bundle (1 rule vs 10 prior — 10% retained)
+        small = _build_bundle(
+            manifest={
+                "schema_version": "0.1",
+                "bundle_version": "0.0.2",
+                "min_consumer_version": "0.1.0",
+                "plugin_commit_sha": "2" * 40,
+                "built_at": "2026-06-17T01:00:00+00:00",
+                "total_rules": 1,
+                "masters": [],
+            },
+            rules_files={
+                "masters/joe-pass/big-corpus/derived/engine-rules.json": {
+                    "engine_rules": [
+                        {"rule_id": "r-0", "name": "one survivor",
+                         "preference": 1, "quality_binding": [],
+                         "when": {}, "then": {}},
+                    ]
+                }
+            },
+        )
+        path = Path("/tmp/test-engine-rules-shrunk.tar.gz")
+        path.write_bytes(small)
+        with self.assertRaises(CommandError) as cm:
+            call_command("sync_engine_rules", "--bundle-path", str(path), stdout=StringIO())
+        self.assertIn("sanity guard", str(cm.exception))
+
+    def test_force_overrides_guard(self) -> None:
+        self._seed_n_rules(10)
+        small = _build_bundle(
+            manifest={
+                "schema_version": "0.1",
+                "bundle_version": "0.0.3",
+                "min_consumer_version": "0.1.0",
+                "plugin_commit_sha": "3" * 40,
+                "built_at": "2026-06-17T02:00:00+00:00",
+                "total_rules": 1,
+                "masters": [],
+            },
+            rules_files={
+                "masters/joe-pass/big-corpus/derived/engine-rules.json": {
+                    "engine_rules": [
+                        {"rule_id": "r-0", "name": "one survivor",
+                         "preference": 1, "quality_binding": [],
+                         "when": {}, "then": {}},
+                    ]
+                }
+            },
+        )
+        path = Path("/tmp/test-engine-rules-force.tar.gz")
+        path.write_bytes(small)
+        # --force lets it proceed
+        call_command(
+            "sync_engine_rules",
+            "--bundle-path", str(path),
+            "--force",
+            stdout=StringIO(),
+        )
+        # 9 of 10 prior rules deactivated, 1 survives + 1 new = 1 active
+        self.assertEqual(EngineRule.objects.filter(is_active=True).count(), 1)
+
+    def test_first_ever_sync_not_guarded(self) -> None:
+        """No prior rules → guard skipped (first-ever sync is always OK)."""
+        # No seed call; pristine DB
+        bundle = _build_bundle()  # default fixture, 1 rule
+        path = Path("/tmp/test-engine-rules-first.tar.gz")
+        path.write_bytes(bundle)
+        # Should NOT raise — first-ever sync skips the threshold check
+        call_command("sync_engine_rules", "--bundle-path", str(path), stdout=StringIO())
         self.assertEqual(EngineRule.objects.filter(is_active=True).count(), 1)
 
 

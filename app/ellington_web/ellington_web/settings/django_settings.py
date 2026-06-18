@@ -39,6 +39,10 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "django.contrib.gis",
+    # Required by apps.engine_rules.EngineRule's ArrayField columns
+    # (quality_binding, applicability_reasons). The system check fails
+    # with postgres.E005 if ArrayField is used without this.
+    "django.contrib.postgres",
     "rest_framework",
     'rest_framework_gis',
     "locations",

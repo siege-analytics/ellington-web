@@ -72,17 +72,27 @@ RELEASE_URL_TEMPLATE = (
     "/releases/download/{tag}/engine-rules-bundle.tar.gz"
 )
 
-# Plugin firing-spec §2 alias table. Legacy ``quality_binding`` values
-# normalize to canonical chord-quality tokens for the transition window
-# until plugin #555 lands the corpus migration; bundles built after
-# #555 pass through unchanged.
+# Plugin firing-spec v0.1 §2 alias table. Maps legacy
+# ``quality_binding`` notation to canonical chord-quality tokens during
+# the transition window until plugin #555 lands the corpus migration.
+# Canonical token set per spec: maj7, dom7, min7, min7b5, dim7, maj6,
+# min6, sus2, sus4, alt7, any. Bundles built after #555 are
+# pre-normalized; this fallback then runs as a no-op.
+#
+# Corrected vs first draft after plugin hostile review (PR #99):
+#   * min7 was kept (canonical), NOT mapped to "m7" (not canonical)
+#   * maj7 -> maj7 no-op removed
+#   * minor/major mappings dropped — those reference the v0.2
+#     family-parent spec being drafted on plugin #555, not v0.1.
 QUALITY_ALIAS = {
     "seventh": "dom7",
     "7": "dom7",
-    "min7": "m7",
-    "maj7": "maj7",
-    "minor": "m",
-    "major": "maj",
+    "dominant7": "dom7",
+    "dominant_7": "dom7",
+    "major7": "maj7",
+    "minor7": "min7",
+    "half-diminished": "min7b5",
+    "diminished": "dim7",
 }
 
 
@@ -111,6 +121,16 @@ class Command(BaseCommand):
                 " Useful for offline tests."
             ),
         )
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help=(
+                "Override the safety guard that refuses a sync where"
+                " the new bundle contains fewer than 50%% of the"
+                " previously-active rules. Use only when the corpus"
+                " has legitimately shrunk (e.g. a re-organization)."
+            ),
+        )
 
     def handle(self, *args, **options) -> None:
         release_tag = options.get("release_tag") or getattr(
@@ -134,6 +154,14 @@ class Command(BaseCommand):
             EngineRule.objects.filter(is_active=True).values_list("pk", flat=True)
         )
         upserted_pks = self._upsert_rules(bundle, manifest, rules_by_path)
+        # Sanity guard — refuse a sync that would deactivate more
+        # than 50% of prior-active rules unless --force. Catches the
+        # accidental empty-bundle scenario; legitimate large corpus
+        # restructures still possible with explicit override.
+        # Plugin agent Q3 ask on PR #99.
+        self._guard_against_mass_deactivation(
+            prior_active_pks, upserted_pks, force=options.get("force", False)
+        )
         deactivated = self._deactivate_missing(prior_active_pks, upserted_pks)
 
         self.stdout.write(
@@ -197,7 +225,14 @@ class Command(BaseCommand):
                 )
                 continue
 
-            for entry in doc.get("rules", []):
+            # Plugin firing-spec v0.1 §6 mandates the rules array key
+            # is "engine_rules", not "rules". The earlier "rules" key
+            # in this code (and the matching test fixture) was
+            # plugin-bundle-incompatible — silently zero-result on
+            # real bundles. Fixed in PR #99 hostile review. The bundle
+            # actually uses ``engine_rules``; ``rules`` is tolerated
+            # as a legacy fallback during the transition window.
+            for entry in doc.get("engine_rules", doc.get("rules", [])):
                 pk = self._upsert_one_rule(bundle, master, work_id, entry)
                 if pk is not None:
                     upserted.add(pk)
@@ -253,6 +288,37 @@ class Command(BaseCommand):
             is_active=False
         )
 
+    def _guard_against_mass_deactivation(
+        self,
+        prior_active_pks: set[int],
+        upserted_pks: set[int],
+        *,
+        force: bool,
+    ) -> None:
+        """Refuse sync runs that would deactivate >50% of prior rules.
+
+        Saves operators from accidentally syncing an empty / malformed
+        bundle and silently wiping the catalog. Legitimate large
+        deletions (corpus restructure) override with ``--force``.
+
+        Skip when there are no prior rules — a first-ever sync writes
+        an arbitrary number with no prior to compare against.
+        """
+        if not prior_active_pks:
+            return
+        if force:
+            return
+        new_count = len(upserted_pks)
+        prior_count = len(prior_active_pks)
+        if new_count * 2 < prior_count:
+            raise CommandError(
+                f"sanity guard: new bundle has {new_count} rules vs "
+                f"{prior_count} previously active "
+                f"({new_count / prior_count:.0%}). Refusing to deactivate "
+                "more than half the catalog. Re-run with --force if "
+                "this is intentional (e.g. corpus restructure)."
+            )
+
 
 # ---------------------------------------------------------------------------
 # Bundle reading helpers (module-level for testability)
@@ -289,8 +355,16 @@ def _load_manifest(tar: tarfile.TarFile) -> dict[str, Any]:
     return json.loads(fp.read().decode("utf-8"))
 
 
+# Match either the v0.1.0 bundle layout
+# (``plugin/data/masters-corpus/<master>/<work>/derived/engine-rules.json``
+# — leaks plugin-internal paths; flagged by plugin agent in PR #99
+# hostile review) or the cleaned-up v0.1.1+ layout
+# (``masters/<master>/<work>/derived/engine-rules.json``). Plugin agent
+# will ship the path-cleanup release; tolerating both keeps Ellington
+# functional during the transition window.
 _RULES_PATH_RE = re.compile(
-    r"^masters/(?P<master_id>[^/]+)/(?P<work_id>[^/]+)/derived/engine-rules\.json$"
+    r"^(?:plugin/data/masters-corpus|masters)"
+    r"/(?P<master_id>[^/]+)/(?P<work_id>[^/]+)/derived/engine-rules\.json$"
 )
 
 
