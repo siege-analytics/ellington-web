@@ -192,3 +192,128 @@ def _build_page_rows(chart_import: ChartImport) -> list[dict]:
             "song": song,
         })
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Chart comments (epic #96 sub-ticket e / #114)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def add_chart_comment(request):
+    """POST a new chart comment. Exactly one of song_id / section_id /
+    chord_event_id must be set; the view rejects all-blank and multiple."""
+    from .models import ChartComment, ChordEvent, Section, Song
+
+    song_id = (request.POST.get("song_id") or "").strip()
+    section_id = (request.POST.get("section_id") or "").strip()
+    chord_event_id = (request.POST.get("chord_event_id") or "").strip()
+    body = (request.POST.get("body") or "").strip()
+
+    if not body:
+        return _redirect_back_with_message(
+            request, "comment can't be empty", "error",
+        )
+
+    set_anchors = sum(1 for v in (song_id, section_id, chord_event_id) if v)
+    if set_anchors != 1:
+        return _redirect_back_with_message(
+            request,
+            "exactly one of song_id / section_id / chord_event_id required",
+            "error",
+        )
+
+    song = section = chord_event = None
+    if song_id:
+        song = get_object_or_404(Song, pk=song_id)
+    elif section_id:
+        section = get_object_or_404(Section, pk=section_id)
+    else:
+        chord_event = get_object_or_404(ChordEvent, pk=chord_event_id)
+
+    parent_id_raw = (request.POST.get("parent_id") or "").strip()
+    parent = None
+    if parent_id_raw:
+        parent_qs = ChartComment.objects.filter(pk=parent_id_raw)
+        if song:
+            parent_qs = parent_qs.filter(song=song)
+        elif section:
+            parent_qs = parent_qs.filter(section=section)
+        else:
+            parent_qs = parent_qs.filter(chord_event=chord_event)
+        parent = parent_qs.first()
+
+    ChartComment.objects.create(
+        song=song, section=section, chord_event=chord_event,
+        author=request.user, body=body, parent=parent,
+    )
+    return _redirect_back_with_message(request, "comment posted", "success")
+
+
+@login_required
+@require_POST
+def delete_chart_comment(request, comment_pk):
+    """Soft-delete. Author OR Admin OR Pedagogue may delete."""
+    from django.utils import timezone
+
+    from apps.core.roles import is_admin, is_pedagogue
+
+    from .models import ChartComment
+
+    comment = get_object_or_404(ChartComment, pk=comment_pk)
+    is_author = comment.author_id == request.user.pk
+    can_moderate = is_admin(request.user) or is_pedagogue(request.user)
+    if not (is_author or can_moderate):
+        from django.http import HttpResponseForbidden
+
+        return HttpResponseForbidden("You can't delete this comment.")
+
+    if comment.deleted_at is None:
+        comment.deleted_at = timezone.now()
+        comment.save(update_fields=["deleted_at"])
+    return _redirect_back_with_message(request, "comment deleted", "info")
+
+
+@login_required
+@require_POST
+def edit_chart_comment(request, comment_pk):
+    """Edit body. Author-only. Refuses deleted comments (410)."""
+    from django.utils import timezone
+
+    from .models import ChartComment
+
+    comment = get_object_or_404(ChartComment, pk=comment_pk)
+    if comment.author_id != request.user.pk:
+        from django.http import HttpResponseForbidden
+
+        return HttpResponseForbidden("You can only edit your own comment.")
+    if comment.deleted_at is not None:
+        from django.http import HttpResponseGone
+
+        return HttpResponseGone("Comment is deleted.")
+
+    body = (request.POST.get("body") or "").strip()
+    if not body:
+        return _redirect_back_with_message(
+            request, "comment can't be empty", "error",
+        )
+
+    comment.body = body
+    comment.edited_at = timezone.now()
+    comment.save(update_fields=["body", "edited_at"])
+    return _redirect_back_with_message(request, "comment edited", "success")
+
+
+def _redirect_back_with_message(request, msg: str, level: str):
+    """Helper — redirect to HTTP_REFERER or chart list with a flash msg."""
+    if level == "error":
+        messages.error(request, msg)
+    elif level == "success":
+        messages.success(request, msg)
+    else:
+        messages.info(request, msg)
+    referer = request.META.get("HTTP_REFERER")
+    if referer:
+        return HttpResponseRedirect(referer)
+    return redirect("charts:import_list")

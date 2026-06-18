@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    ChartComment,
     ChartImport,
     ChartImportStatus,
     ChordEvent,
@@ -122,3 +123,26 @@ class ChartImportAdmin(admin.ModelAdmin):
         "pages_failed",
         "error_log",
     )
+
+
+@admin.register(ChartComment)
+class ChartCommentAdmin(admin.ModelAdmin):
+    list_display = ("anchor_display", "author", "is_deleted", "created_at")
+    list_filter = ("deleted_at", "created_at")
+    search_fields = ("body", "author__username")
+    readonly_fields = ("created_at", "edited_at", "deleted_at")
+    raw_id_fields = ("song", "section", "chord_event", "author", "parent")
+
+    @admin.display(description="anchor")
+    def anchor_display(self, obj):
+        if obj.song_id:
+            return f"Song #{obj.song_id}"
+        if obj.section_id:
+            return f"Section #{obj.section_id}"
+        if obj.chord_event_id:
+            return f"ChordEvent #{obj.chord_event_id}"
+        return "—"
+
+    @admin.display(boolean=True, description="deleted")
+    def is_deleted(self, obj):
+        return obj.deleted_at is not None
