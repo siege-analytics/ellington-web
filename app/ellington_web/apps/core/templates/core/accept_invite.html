@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Accept invite — Ellington</title>
+  <link rel="stylesheet" href="/static/css/brand.css">
+  <style>
+    body { max-width: 480px; margin: 4em auto; padding: 0 1em; font-family: var(--font-body); }
+    h1 { font-family: var(--font-display); }
+    form p { margin: 1em 0; }
+    form label { display: block; font-weight: bold; margin-bottom: 0.2em; }
+    form input { width: 100%; padding: 0.4em; border: 1px solid #aaa; border-radius: 3px; font: inherit; }
+    input[type="submit"] {
+      background: var(--link); color: white; border: none;
+      padding: 0.5em 1em; border-radius: 3px; cursor: pointer;
+    }
+    .errorlist { color: #c33; padding-left: 1.2em; }
+    .helptext { color: var(--fg-muted); font-size: 0.9em; display: block; margin-top: 0.2em; }
+  </style>
+</head>
+<body>
+  <h1>Welcome to Ellington</h1>
+  <p>
+    <strong>{{ invite.inviter.username }}</strong> invited you and shared
+    {{ pending_shares|length }} recording{{ pending_shares|length|pluralize }} with you.
+  </p>
+  <p>Pick a username and password to get started.</p>
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form %}
+      <p>
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<small class="helptext">{{ field.help_text }}</small>{% endif %}
+        {{ field.errors }}
+      </p>
+    {% endfor %}
+    <p><input type="submit" value="Create account"></p>
+  </form>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{% extends "practice/base.html" %}
+
+{% block title %}Share recording — Ellington{% endblock %}
+
+{% block content %}
+<h1>Share recording</h1>
+
+<p>
+  Share with an existing Ellington user, or send a fresh invite by email
+  to bring someone new in.
+</p>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  {% for field in form %}
+    <p>
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.help_text %}<small class="helptext">{{ field.help_text }}</small>{% endif %}
+      {{ field.errors }}
+    </p>
+  {% endfor %}
+  <p>
+    <input type="submit" value="Share">
+    <a href="{% url 'practice:session_detail' recording.session_id %}">Cancel</a>
+  </p>
+</form>
+{% endblock %}

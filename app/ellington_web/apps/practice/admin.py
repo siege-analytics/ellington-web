@@ -4,9 +4,11 @@ from .models import (
     AudioStem,
     BackingTrack,
     ChordDetection,
+    Invite,
     PracticeSegment,
     PracticeSession,
     Recording,
+    RecordingShare,
 )
 
 
@@ -112,3 +114,21 @@ class ChordDetectionAdmin(admin.ModelAdmin):
 class PracticeSegmentAdmin(admin.ModelAdmin):
     list_display = ("session", "start_ms", "end_ms", "recording", "critique", "label")
     raw_id_fields = ("session", "recording", "critique")
+
+
+@admin.register(Invite)
+class InviteAdmin(admin.ModelAdmin):
+    list_display = ("email", "inviter", "created_at", "expires_at", "accepted_at", "redeemed_by")
+    list_filter = ("accepted_at",)
+    search_fields = ("email", "name_hint", "inviter__username")
+    readonly_fields = ("token", "created_at", "accepted_at", "redeemed_by")
+    raw_id_fields = ("inviter",)
+
+
+@admin.register(RecordingShare)
+class RecordingShareAdmin(admin.ModelAdmin):
+    list_display = ("recording", "sharer", "recipient", "invite", "shared_at")
+    list_filter = ("shared_at",)
+    search_fields = ("sharer__username", "recipient__username")
+    readonly_fields = ("shared_at",)
+    raw_id_fields = ("recording", "sharer", "recipient", "invite")

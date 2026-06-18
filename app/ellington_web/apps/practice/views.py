@@ -219,3 +219,91 @@ __all__ = [
     "session_list",
     "session_new",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Recording sharing + shared-with-me (epic #96 sub-ticket b / #108)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def share_recording(request: HttpRequest, recording_pk: int) -> HttpResponse:
+    """Share a Recording with another user (existing or invited)."""
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+
+    from .forms import ShareRecordingForm
+
+    recording = get_object_or_404(
+        Recording.objects.select_related("session"),
+        pk=recording_pk,
+        session__user=request.user,
+    )
+
+    if request.method == "POST":
+        form = ShareRecordingForm(
+            request.POST, sharer=request.user, recording=recording,
+        )
+        if form.is_valid():
+            share, invite = form.save()
+            context = {
+                "share": share,
+                "invite": invite,
+                "sharer": request.user,
+                "recording": recording,
+                "site_origin": request.build_absolute_uri("/").rstrip("/"),
+            }
+            if invite is not None:
+                context["accept_url"] = request.build_absolute_uri(
+                    reverse("core:accept_invite", args=[invite.token])
+                )
+                subject = "You've been invited to Ellington"
+                body_txt = render_to_string("email/invite_to_ellington.txt", context)
+                body_html = render_to_string("email/invite_to_ellington.html", context)
+                msg = EmailMultiAlternatives(
+                    subject=subject, body=body_txt, to=[invite.email],
+                )
+                msg.attach_alternative(body_html, "text/html")
+                msg.send(fail_silently=False)
+                messages.success(
+                    request,
+                    f"Invite sent to {invite.email}. They'll see your recording"
+                    " once they sign up.",
+                )
+            else:
+                subject = f"{request.user.username} shared a recording with you"
+                body_txt = render_to_string("email/recording_shared.txt", context)
+                body_html = render_to_string("email/recording_shared.html", context)
+                if share.recipient.email:
+                    msg = EmailMultiAlternatives(
+                        subject=subject, body=body_txt,
+                        to=[share.recipient.email],
+                    )
+                    msg.attach_alternative(body_html, "text/html")
+                    msg.send(fail_silently=False)
+                messages.success(
+                    request,
+                    f"Recording shared with {share.recipient.username}.",
+                )
+            return redirect("practice:session_detail", pk=recording.session_id)
+    else:
+        form = ShareRecordingForm(sharer=request.user, recording=recording)
+
+    return render(request, "practice/share_recording.html", {
+        "form": form, "recording": recording,
+    })
+
+
+@login_required
+def shared_with_me(request: HttpRequest) -> HttpResponse:
+    """List Recordings shared *with* the signed-in user."""
+    from .models import RecordingShare
+
+    shares = (
+        RecordingShare.objects
+        .filter(recipient=request.user)
+        .select_related("recording__session", "sharer")
+        .order_by("-shared_at")
+    )
+    return render(request, "practice/shared_with_me.html", {"shares": shares})
