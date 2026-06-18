@@ -317,3 +317,136 @@ def _redirect_back_with_message(request, msg: str, level: str):
     if referer:
         return HttpResponseRedirect(referer)
     return redirect("charts:import_list")
+
+
+# ---------------------------------------------------------------------------
+# Songbook sharing (epic #96 sub-ticket c / #137)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def songbook_list(request):
+    """Accessible-Songbook list: public + mine + shared-with-me + studio-scoped."""
+    from django.db.models import Q
+
+    from apps.practice.models import StudioMember, StudioRole
+
+    from .models import Songbook, SongbookShare, SongbookVisibility
+
+    my_studio_ids = (
+        StudioMember.objects
+        .filter(user=request.user)
+        .exclude(role=StudioRole.BANNED)
+        .values_list("studio_id", flat=True)
+    )
+    shared_ids = (
+        SongbookShare.objects
+        .filter(recipient=request.user)
+        .values_list("songbook_id", flat=True)
+    )
+
+    qs = (
+        Songbook.objects
+        .filter(
+            Q(visibility=SongbookVisibility.PUBLIC)
+            | Q(owner=request.user)
+            | Q(pk__in=shared_ids)
+            | Q(
+                visibility=SongbookVisibility.STUDIO,
+                studio_id__in=my_studio_ids,
+            )
+        )
+        .distinct()
+        .order_by("title")
+    )
+
+    return render(request, "charts/songbook_list.html", {
+        "songbooks": qs,
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def songbook_share(request, pk: int):
+    """Share a Songbook with another user. Owner-only."""
+    from django.contrib.auth import get_user_model
+
+    from .models import Songbook, SongbookShare
+    from .permissions import is_songbook_owner
+
+    songbook = get_object_or_404(Songbook, pk=pk)
+    if not is_songbook_owner(request.user, songbook):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Only the owner may share.")
+
+    User = get_user_model()
+    if request.method == "POST":
+        recipient_lookup = (request.POST.get("recipient_lookup") or "").strip()
+        share_note = (request.POST.get("share_note") or "").strip()
+
+        if not recipient_lookup:
+            messages.error(request, "recipient required")
+            return redirect("charts:songbook_share", pk=pk)
+
+        recipient = (
+            User.objects.filter(email__iexact=recipient_lookup).first()
+            or User.objects.filter(username__iexact=recipient_lookup).first()
+        )
+        if recipient is None:
+            messages.error(request, f"no user matches {recipient_lookup!r}")
+            return redirect("charts:songbook_share", pk=pk)
+        if recipient.pk == request.user.pk:
+            messages.error(request, "you can't share with yourself")
+            return redirect("charts:songbook_share", pk=pk)
+
+        SongbookShare.objects.get_or_create(
+            songbook=songbook, recipient=recipient,
+            defaults={"sharer": request.user, "share_note": share_note},
+        )
+        messages.success(
+            request, f"shared with {recipient.username}",
+        )
+        return redirect("charts:songbook_list")
+
+    return render(request, "charts/songbook_share.html", {
+        "songbook": songbook,
+    })
+
+
+@login_required
+@require_POST
+def songbook_visibility(request, pk: int):
+    """Toggle visibility. Owner-only. POST body: visibility=<private|studio|public>,
+    studio_slug=<slug> (when visibility=studio)."""
+    from .models import Songbook, SongbookVisibility
+    from .permissions import is_songbook_owner
+
+    songbook = get_object_or_404(Songbook, pk=pk)
+    if not is_songbook_owner(request.user, songbook):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Only the owner may change visibility.")
+
+    visibility = (request.POST.get("visibility") or "").strip()
+    valid = {c[0] for c in SongbookVisibility.choices}
+    if visibility not in valid:
+        messages.error(request, "invalid visibility value")
+        return redirect("charts:songbook_list")
+
+    songbook.visibility = visibility
+    if visibility == SongbookVisibility.STUDIO:
+        from apps.practice.models import Studio
+
+        studio_slug = (request.POST.get("studio_slug") or "").strip()
+        if not studio_slug:
+            messages.error(request, "studio_slug required for studio scope")
+            return redirect("charts:songbook_list")
+        studio = Studio.objects.filter(slug=studio_slug).first()
+        if studio is None:
+            messages.error(request, f"unknown studio {studio_slug!r}")
+            return redirect("charts:songbook_list")
+        songbook.studio = studio
+    else:
+        songbook.studio = None
+    songbook.save(update_fields=["visibility", "studio"])
+    messages.success(request, f"visibility set to {visibility}")
+    return redirect("charts:songbook_list")

@@ -30,4 +30,7 @@ urlpatterns = [
         views.edit_chart_comment,
         name="edit_chart_comment",
     ),
+    path("songbooks/", views.songbook_list, name="songbook_list"),
+    path("songbooks/<int:pk>/share/", views.songbook_share, name="songbook_share"),
+    path("songbooks/<int:pk>/visibility/", views.songbook_visibility, name="songbook_visibility"),
 ]

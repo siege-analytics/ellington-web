@@ -85,12 +85,47 @@ class ChartImportStatus(models.TextChoices):
 # ---------------------------------------------------------------------------
 
 
+class SongbookVisibility(models.TextChoices):
+    PRIVATE = "private", "Private (owner + share recipients)"
+    STUDIO = "studio", "Studio (members of linked Studio)"
+    PUBLIC = "public", "Public (any signed-in user)"
+
+
 class Songbook(models.Model):
     slug = models.SlugField(unique=True, max_length=64)
     title = models.CharField(max_length=255)
     publisher = models.CharField(max_length=255, blank=True)
     year = models.PositiveIntegerField(null=True, blank=True)
     description = models.TextField(blank=True)
+
+    # Sharing dimension per epic #96 sub-ticket (c) / #137. Null owner
+    # = canonical/seed Songbook (visibility forced to public). Owner set
+    # = user-created (via PDF upload or admin), visibility owner-controlled.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="songbooks_owned",
+        help_text="Creator. Null for canonical seed Songbooks (visibility"
+        " is forced to public for those).",
+    )
+    visibility = models.CharField(
+        max_length=16,
+        choices=SongbookVisibility.choices,
+        default=SongbookVisibility.PUBLIC,
+        db_index=True,
+    )
+    studio = models.ForeignKey(
+        "practice.Studio",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="songbooks",
+        help_text="Used when visibility=studio: members of this Studio"
+        " gain access. Ignored otherwise.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -542,3 +577,53 @@ class ChartComment(models.Model):
     @property
     def display_body(self) -> str:
         return "[deleted]" if self.is_deleted else self.body
+
+
+# ---------------------------------------------------------------------------
+# Songbook sharing (epic #96 sub-ticket c / #137)
+# ---------------------------------------------------------------------------
+
+
+class SongbookShare(models.Model):
+    """Direct user-to-user share of a Songbook.
+
+    Mirror of practice.RecordingShare's shape: sharer + recipient FKs,
+    optional note. Recipient gains read access regardless of
+    Songbook.visibility.
+    """
+
+    songbook = models.ForeignKey(
+        Songbook,
+        on_delete=models.CASCADE,
+        related_name="shares",
+    )
+    sharer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="songbook_shares_sent",
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="songbook_shares_received",
+    )
+    share_note = models.TextField(blank=True)
+    shared_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-shared_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["songbook", "recipient"],
+                name="songbookshare_book_recipient_unique",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["recipient", "-shared_at"],
+                name="songbookshare_recipient_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"SongbookShare(book={self.songbook_id} → user={self.recipient_id})"
