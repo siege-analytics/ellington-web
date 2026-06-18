@@ -118,3 +118,83 @@ def accept_invite(request: HttpRequest, token: str) -> HttpResponse:
         "invite": invite,
         "pending_shares": pending_shares,
     })
+
+
+# ---------------------------------------------------------------------------
+# Self-service account deletion (epic #96 sub-ticket k / #112)
+# ---------------------------------------------------------------------------
+
+
+class SelfDeleteForm(forms.Form):
+    """Confirm-by-typing-username form for self-service account deletion."""
+
+    confirm_username = forms.CharField(
+        required=True,
+        max_length=150,
+        label="Type your username to confirm",
+    )
+    reason = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        max_length=2000,
+        label="Reason (optional)",
+        help_text="Helps us learn. Captured in the audit log, not"
+        " forwarded to anyone.",
+    )
+
+    def __init__(self, *args, expected_username=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.expected_username = expected_username
+
+    def clean_confirm_username(self):
+        value = (self.cleaned_data["confirm_username"] or "").strip()
+        if self.expected_username and value != self.expected_username:
+            raise forms.ValidationError(
+                "username doesn't match — type it exactly as it"
+                " appears in the form label"
+            )
+        return value
+
+
+@require_http_methods(["GET", "POST"])
+def self_delete_account(request: HttpRequest) -> HttpResponse:
+    """Self-service account deletion at /accounts/delete/.
+
+    Requires authentication. POST with matching confirm_username runs
+    the full perform_account_deletion path; the request.user is both
+    the target and the initiator.
+    """
+    from django.contrib.auth import logout
+    from django.shortcuts import resolve_url
+
+    from apps.core.deletion import perform_account_deletion
+
+    if not request.user.is_authenticated:
+        return redirect(f"{resolve_url('login')}?next={request.path}")
+
+    if request.method == "POST":
+        form = SelfDeleteForm(
+            request.POST, expected_username=request.user.username,
+        )
+        if form.is_valid():
+            try:
+                perform_account_deletion(
+                    request.user, initiated_by=request.user,
+                )
+            except ValueError as exc:
+                messages.error(request, str(exc))
+            else:
+                logout(request)
+                return redirect("core:account_deleted")
+    else:
+        form = SelfDeleteForm(expected_username=request.user.username)
+
+    return render(request, "core/account_delete.html", {
+        "form": form,
+        "user": request.user,
+    })
+
+
+def account_deleted(request: HttpRequest) -> HttpResponse:
+    """Goodbye page at /accounts/deleted/."""
+    return render(request, "core/account_deleted.html")
