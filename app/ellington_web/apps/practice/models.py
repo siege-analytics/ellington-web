@@ -540,3 +540,89 @@ class RecordingShare(models.Model):
         if self.recipient_id:
             return f"RecordingShare(rec={self.recording_id} → user={self.recipient_id})"
         return f"RecordingShare(rec={self.recording_id} → pending invite={self.invite_id})"
+
+
+# ---------------------------------------------------------------------------
+# Comments on Recordings (epic #96 sub-ticket d / #110)
+# ---------------------------------------------------------------------------
+
+
+class RecordingComment(models.Model):
+    """One comment anchored to a Recording.
+
+    ``anchor_ms`` (offset from the start of the audio) is nullable —
+    null means whole-recording comment. Threading via ``parent`` self-FK.
+    Soft-delete preserves thread shape; deleted comments render as
+    '[deleted]' inline.
+
+    Permissions: a viewer can read/write comments on a Recording iff
+    they're the Recording's owner OR a recipient of a RecordingShare
+    for that Recording. The shared check lives in
+    ``apps.practice.permissions.can_access_recording``.
+    """
+
+    recording = models.ForeignKey(
+        "Recording",
+        on_delete=models.CASCADE,
+        related_name="comments",
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="recording_comments",
+        help_text="Comment author. PROTECT — sentinel-anonymize on user"
+        " delete via apps.core.delete_user_account.",
+    )
+    body = models.TextField(
+        help_text="Plain-text comment body. Markdown / rich text is v2.",
+    )
+    anchor_ms = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Time offset in the recording, in milliseconds."
+        " Null = whole-recording comment.",
+    )
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="replies",
+        help_text="Parent comment for threading. Null = top-level.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    edited_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Set on author's first edit; sticky after that.",
+    )
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Soft-delete marker. When set, body is redacted and"
+        " the comment renders as '[deleted]'. Setting preserves thread"
+        " shape so replies still anchor.",
+    )
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(
+                fields=["recording", "created_at"],
+                name="reccomment_rec_chrono_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        marker = "(deleted) " if self.deleted_at else ""
+        return f"RecordingComment({marker}{self.author_id} on rec={self.recording_id})"
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    @property
+    def display_body(self) -> str:
+        return "[deleted]" if self.is_deleted else self.body

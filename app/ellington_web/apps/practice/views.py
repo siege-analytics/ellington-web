@@ -307,3 +307,138 @@ def shared_with_me(request: HttpRequest) -> HttpResponse:
         .order_by("-shared_at")
     )
     return render(request, "practice/shared_with_me.html", {"shares": shares})
+
+
+# ---------------------------------------------------------------------------
+# Recording comments (epic #96 sub-ticket d / #110)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def add_recording_comment(request: HttpRequest, recording_pk: int) -> HttpResponse:
+    """POST a new comment on a Recording. Comment author = request.user."""
+    from .models import Recording, RecordingComment
+    from .permissions import can_access_recording
+
+    recording = get_object_or_404(
+        Recording.objects.select_related("session"), pk=recording_pk,
+    )
+    if not can_access_recording(request.user, recording):
+        from django.http import HttpResponseForbidden
+
+        return HttpResponseForbidden("You can't comment on this recording.")
+
+    body = (request.POST.get("body") or "").strip()
+    if not body:
+        messages.error(request, "comment can't be empty")
+        return redirect("practice:session_detail", pk=recording.session_id)
+
+    anchor_ms_raw = (request.POST.get("anchor_ms") or "").strip()
+    anchor_ms: int | None = None
+    if anchor_ms_raw:
+        try:
+            anchor_ms = int(anchor_ms_raw)
+            if anchor_ms < 0:
+                raise ValueError
+            if recording.duration_ms and anchor_ms > recording.duration_ms:
+                messages.error(
+                    request,
+                    f"anchor_ms ({anchor_ms}) exceeds recording duration"
+                    f" ({recording.duration_ms})",
+                )
+                return redirect("practice:session_detail", pk=recording.session_id)
+        except ValueError:
+            messages.error(request, "anchor_ms must be a non-negative integer")
+            return redirect("practice:session_detail", pk=recording.session_id)
+
+    parent_id_raw = (request.POST.get("parent_id") or "").strip()
+    parent = None
+    if parent_id_raw:
+        parent = RecordingComment.objects.filter(
+            pk=parent_id_raw, recording=recording,
+        ).first()
+
+    RecordingComment.objects.create(
+        recording=recording,
+        author=request.user,
+        body=body,
+        anchor_ms=anchor_ms,
+        parent=parent,
+    )
+    return redirect("practice:session_detail", pk=recording.session_id)
+
+
+@login_required
+@require_POST
+def delete_recording_comment(
+    request: HttpRequest, comment_pk: int,
+) -> HttpResponse:
+    """Soft-delete a comment.
+
+    Allowed if request.user is the comment's author OR the owner of
+    the Recording (moderation).
+    """
+    from django.utils import timezone
+
+    from .models import RecordingComment
+    from .permissions import is_recording_owner
+
+    comment = get_object_or_404(
+        RecordingComment.objects.select_related("recording__session"),
+        pk=comment_pk,
+    )
+    is_author = comment.author_id == request.user.pk
+    is_owner = is_recording_owner(request.user, comment.recording)
+    if not (is_author or is_owner):
+        from django.http import HttpResponseForbidden
+
+        return HttpResponseForbidden(
+            "You can't delete this comment."
+        )
+
+    if comment.deleted_at is None:
+        comment.deleted_at = timezone.now()
+        comment.save(update_fields=["deleted_at"])
+
+    return redirect(
+        "practice:session_detail", pk=comment.recording.session_id,
+    )
+
+
+@login_required
+@require_POST
+def edit_recording_comment(
+    request: HttpRequest, comment_pk: int,
+) -> HttpResponse:
+    """Edit a comment's body. Only the comment's author may edit."""
+    from django.utils import timezone
+
+    from .models import RecordingComment
+
+    comment = get_object_or_404(
+        RecordingComment.objects.select_related("recording__session"),
+        pk=comment_pk,
+    )
+    if comment.author_id != request.user.pk:
+        from django.http import HttpResponseForbidden
+
+        return HttpResponseForbidden("You can only edit your own comment.")
+    if comment.deleted_at is not None:
+        from django.http import HttpResponseGone
+
+        return HttpResponseGone("Comment is deleted.")
+
+    body = (request.POST.get("body") or "").strip()
+    if not body:
+        messages.error(request, "comment can't be empty")
+        return redirect(
+            "practice:session_detail", pk=comment.recording.session_id,
+        )
+
+    comment.body = body
+    comment.edited_at = timezone.now()
+    comment.save(update_fields=["body", "edited_at"])
+    return redirect(
+        "practice:session_detail", pk=comment.recording.session_id,
+    )
