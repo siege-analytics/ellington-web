@@ -1,0 +1,109 @@
+{% extends "rule_review/base.html" %}
+
+{% block title %}Rule {{ rule.rule_id }} — Ellington{% endblock %}
+
+{% block content %}
+<h1>{{ rule.name }}</h1>
+
+<div class="rule-card">
+  <p><strong>Master:</strong> {{ rule.master.name }} · <strong>Work:</strong> {{ rule.work_id }}</p>
+  <p><strong>Quality binding:</strong> {{ rule.quality_binding|join:", "|default:"(any)" }}</p>
+  <p><strong>Preference (Likert):</strong> {{ rule.preference }} ({{ rule.polarity }})</p>
+
+  <h3>When</h3>
+  <pre>{{ rule.when_predicate|pprint }}</pre>
+
+  <h3>Then</h3>
+  <pre>{{ rule.then_action|pprint }}</pre>
+
+  {% if rule.anchor %}
+  <h3>Anchor</h3>
+  <div class="anchor-quote">
+    {{ rule.anchor }}
+    {% if rule.source_page %}<div class="meta">Page {{ rule.source_page }}</div>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if rule.falsifier %}
+  <h3>Falsifier</h3>
+  <p>{{ rule.falsifier }}</p>
+  {% endif %}
+
+  <p>
+    <strong>Verdict counts:</strong>
+    <span class="badge badge--accept">{{ counts.accept|default:0 }} accept</span>
+    <span class="badge badge--close_but">{{ counts.close_but|default:0 }} close-but</span>
+    <span class="badge badge--reject">{{ counts.reject|default:0 }} reject</span>
+  </p>
+</div>
+
+<h2>Your verdict</h2>
+{% if can_write %}
+<form method="post" id="verdict-form">
+  {% csrf_token %}
+  <p>
+    {% for value, label in verdict_choices %}
+      <label style="display:inline; margin-right: 1em;">
+        <input type="radio" name="verdict" value="{{ value }}" {% if my_response.verdict == value %}checked{% endif %}>
+        {{ label }}
+      </label>
+    {% endfor %}
+  </p>
+
+  <p>
+    <label for="rejection_axis">Rejection axis (close-but / reject only):</label>
+    <select id="rejection_axis" name="rejection_axis">
+      <option value="">—</option>
+      {% for value, label in axis_choices %}
+        <option value="{{ value }}" {% if my_response.rejection_axis == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </p>
+
+  <p>
+    <label for="comment">Comment (required for close-but / reject):</label>
+    <textarea id="comment" name="comment" rows="4">{{ my_response.comment }}</textarea>
+  </p>
+
+  <p><input type="submit" value="Save verdict"></p>
+</form>
+{% else %}
+<p><em>You need the Pedagogue role to submit verdicts. Ask Dheeraj.</em></p>
+{% endif %}
+
+<h2>Discussion ({{ comments|length }})</h2>
+
+{% for c in comments %}
+  <div class="comment {% if c.parent %}reply{% endif %}">
+    <div class="meta">
+      <strong>{{ c.author.username }}</strong> — {{ c.created_at|date:"Y-m-d H:i" }}
+      {% if c.edited_at %}(edited {{ c.edited_at|date:"Y-m-d H:i" }}){% endif %}
+    </div>
+    <div>{{ c.display_body|linebreaks }}</div>
+    {% if c.author == user and not c.is_deleted %}
+    <form method="post" action="{% url 'rule_review:delete_rule_comment' c.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit" class="destructive">delete</button>
+    </form>
+    {% endif %}
+    {% if user.is_staff and not c.is_deleted and c.author != user %}
+    <form method="post" action="{% url 'rule_review:delete_rule_comment' c.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit" class="destructive">moderate</button>
+    </form>
+    {% endif %}
+  </div>
+{% empty %}
+  <p><em>No comments yet.</em></p>
+{% endfor %}
+
+{% if can_write %}
+<h3>Add comment</h3>
+<form method="post" action="{% url 'rule_review:add_rule_comment' %}">
+  {% csrf_token %}
+  <input type="hidden" name="rule_id" value="{{ rule.pk }}">
+  <p><textarea name="body" rows="3" required></textarea></p>
+  <p><input type="submit" value="Post"></p>
+</form>
+{% endif %}
+{% endblock %}
