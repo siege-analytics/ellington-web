@@ -1,0 +1,36 @@
+{% extends "practice/base.html" %}
+
+{% block title %}{{ studio.name }} — Ellington{% endblock %}
+
+{% block content %}
+<h1>{{ studio.name }}</h1>
+<p><em>{{ studio.get_visibility_display }}</em></p>
+
+{% if studio.description %}<p>{{ studio.description|linebreaks }}</p>{% endif %}
+
+<h2>Members ({{ memberships|length }})</h2>
+<ul>
+  {% for m in memberships %}
+  <li>
+    {{ m.user.username }} — <em>{{ m.get_role_display }}</em>
+    {% if m.user == studio.owner %}<strong>(owner)</strong>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+
+{% if is_member %}
+  {% if studio.owner != user %}
+  <form method="post" action="{% url 'practice:studio_leave' studio.slug %}">
+    {% csrf_token %}
+    <button type="submit" class="destructive">Leave studio</button>
+  </form>
+  {% endif %}
+{% else %}
+  {% if studio.visibility != "private" %}
+  <form method="post" action="{% url 'practice:studio_join' studio.slug %}">
+    {% csrf_token %}
+    <button type="submit">Join studio</button>
+  </form>
+  {% endif %}
+{% endif %}
+{% endblock %}

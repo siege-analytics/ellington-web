@@ -626,3 +626,114 @@ class RecordingComment(models.Model):
     @property
     def display_body(self) -> str:
         return "[deleted]" if self.is_deleted else self.body
+
+
+# ---------------------------------------------------------------------------
+# Studios (epic #96 sub-ticket f / #120)
+# ---------------------------------------------------------------------------
+
+
+class StudioVisibility(models.TextChoices):
+    PRIVATE = "private", "Private (members only)"
+    LINK_INVITE = "link_invite", "Link-invite (anyone with the URL can request to join)"
+    PUBLIC = "public", "Public (browsable + joinable)"
+
+
+class StudioRole(models.TextChoices):
+    MEMBER = "member", "Member"
+    MODERATOR = "moderator", "Moderator"
+    BANNED = "banned", "Banned"
+
+
+class Studio(models.Model):
+    """A multi-user practice container — the digital equivalent of
+    "Wednesday-night practice group with teacher Steve".
+
+    Visibility controls discovery + join:
+    - private: only listed members can see
+    - link_invite: anyone with the URL can request to join
+    - public: browsable + auto-join
+
+    Owner is preserved on user delete via PROTECT — the studio
+    doesn't disappear if the owner leaves the system. Ownership
+    transfer is a v2 affordance.
+    """
+
+    slug = models.SlugField(
+        max_length=64,
+        unique=True,
+        help_text="URL-safe identifier (lowercase, hyphens, no spaces).",
+    )
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="studios_owned",
+        help_text="The studio's founder + permanent owner."
+        " PROTECT — owner row outlives the studio's existence.",
+    )
+    visibility = models.CharField(
+        max_length=16,
+        choices=StudioVisibility.choices,
+        default=StudioVisibility.PRIVATE,
+        db_index=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"Studio({self.slug})"
+
+
+class StudioMember(models.Model):
+    """One user's membership in one Studio.
+
+    Roles: member (default), moderator (manage + invite), banned
+    (kept on row so re-joining requires unban). Unique per (studio, user).
+    """
+
+    studio = models.ForeignKey(
+        Studio,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="studio_memberships",
+        help_text="The member. PROTECT — preserve audit trail for"
+        " moderation history.",
+    )
+    role = models.CharField(
+        max_length=16,
+        choices=StudioRole.choices,
+        default=StudioRole.MEMBER,
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="studio_invites_issued",
+    )
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["studio", "user__username"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["studio", "user"],
+                name="studiomember_studio_user_unique",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "studio"], name="studiomember_user_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"StudioMember({self.studio_id}:{self.user_id}:{self.role})"

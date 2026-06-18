@@ -40,4 +40,9 @@ urlpatterns = [
         views.edit_recording_comment,
         name="edit_recording_comment",
     ),
+    path("studios/", views.studio_list, name="studio_list"),
+    path("studios/new/", views.studio_create, name="studio_create"),
+    path("studios/<slug:slug>/", views.studio_detail, name="studio_detail"),
+    path("studios/<slug:slug>/join/", views.studio_join, name="studio_join"),
+    path("studios/<slug:slug>/leave/", views.studio_leave, name="studio_leave"),
 ]
