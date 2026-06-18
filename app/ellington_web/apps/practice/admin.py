@@ -8,6 +8,7 @@ from .models import (
     PracticeSegment,
     PracticeSession,
     Recording,
+    RecordingComment,
     RecordingShare,
 )
 
@@ -132,3 +133,16 @@ class RecordingShareAdmin(admin.ModelAdmin):
     search_fields = ("sharer__username", "recipient__username")
     readonly_fields = ("shared_at",)
     raw_id_fields = ("recording", "sharer", "recipient", "invite")
+
+
+@admin.register(RecordingComment)
+class RecordingCommentAdmin(admin.ModelAdmin):
+    list_display = ("recording", "author", "anchor_ms", "is_deleted", "created_at")
+    list_filter = ("deleted_at", "created_at")
+    search_fields = ("body", "author__username")
+    readonly_fields = ("created_at", "edited_at", "deleted_at")
+    raw_id_fields = ("recording", "author", "parent")
+
+    @admin.display(boolean=True, description="deleted")
+    def is_deleted(self, obj):
+        return obj.deleted_at is not None
