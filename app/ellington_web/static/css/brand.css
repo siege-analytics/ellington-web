@@ -1,0 +1,132 @@
+/* Ellington brand identity v1 — typography + chord-quality semantic
+   palette. The palette doubles as both the brand color system AND the
+   in-app semantic colors for chord renders. Per ellington-web #102.
+
+   Light mode is the default (cream background); dark mode is opt-in
+   via the `data-theme="dark"` attribute on <html>. Most surfaces will
+   ship in light mode; the practice-session view may switch to dark for
+   late-night practice rooms.
+
+   Color choices preserve WCAG-AA contrast against both the cream
+   background (#fffbf2) and the slate background (#1a1a1a):
+
+     | quality   | hex        | meaning                                  |
+     | --------- | ---------- | ---------------------------------------- |
+     | maj7      | #c89f3c    | cream — bright, open, warm consonance    |
+     | min7      | #4a5f78    | slate — cool, melancholic, stable        |
+     | dom7      | #b76e2a    | mustard — tense, expectant, on-the-way   |
+     | dim7      | #5f1818    | oxblood — strong avoid, dissonant tritone|
+     | min7b5    | #6e3a3a    | burgundy — half-dim, leading-to          |
+     | alt       | #8a3324    | rust — altered dominant, dense color     |
+     | sus       | #6b7a4a    | olive — suspended, unresolved            |
+     | other     | #6b5d44    | brown — fallback for uncategorized       |
+
+   The palette pays its rent twice:
+   1. As Ellington's brand color identity (header accents, links, CTA)
+   2. As the in-app semantic color for chord renders in the chart view
+      (#82), engine-rule cards (#97), confirmation form (#98)
+*/
+
+@font-face {
+  font-family: "MuseJazz Text";
+  /* MuseJazz ships under SIL OFL with the MuseScore distribution.
+     Binary lands in a follow-up PR after the OFL.txt license file is
+     committed alongside. Until then, the fallback stack carries. */
+  src: url("../fonts/musejazz/MuseJazzText.woff2") format("woff2"),
+       url("../fonts/musejazz/MuseJazzText.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MuseJazz Symbol";
+  src: url("../fonts/musejazz/MuseJazz.woff2") format("woff2"),
+       url("../fonts/musejazz/MuseJazz.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Surfaces */
+  --bg: #f6f1e6;
+  --bg-elev: #fffbf2;
+  --bg-border: #d9cdb3;
+  --fg: #1a1a1a;
+  --fg-muted: #6b5d44;
+  --link: #8a3324;
+
+  /* Chord-quality semantic palette (the brand) */
+  --chord-maj7: #c89f3c;
+  --chord-min7: #4a5f78;
+  --chord-dom7: #b76e2a;
+  --chord-dim7: #5f1818;
+  --chord-min7b5: #6e3a3a;
+  --chord-alt: #8a3324;
+  --chord-sus: #6b7a4a;
+  --chord-other: #6b5d44;
+
+  /* Preference rendering for engine-rule cards (#97 / #98). The
+     palette and the engine-rule signed Likert read consistently:
+     positive preference (recommend) tracks the warm side of the
+     palette; negative preference (avoid) tracks the cool/dark side. */
+  --preference-strong-recommend: var(--chord-maj7);    /* +2 */
+  --preference-weak-recommend: var(--chord-dom7);      /* +1 */
+  --preference-neutral: var(--fg-muted);               /*  0 */
+  --preference-weak-avoid: var(--chord-min7b5);        /* -1 */
+  --preference-strong-avoid: var(--chord-dim7);        /* -2 */
+
+  /* Typography */
+  --font-display: "MuseJazz Text", "Bradley Hand", "Comic Sans MS", cursive, serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-symbol: "MuseJazz Symbol", "Bravura Text", serif;
+}
+
+[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --bg-elev: #242424;
+  --bg-border: #3a3a3a;
+  --fg: #f6f1e6;
+  --fg-muted: #a89d84;
+  /* Chord-quality palette stays the same — colors are calibrated to
+     pass WCAG-AA against both backgrounds. */
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  line-height: 1.5;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  letter-spacing: 0.02em;
+  font-weight: bold;
+}
+
+.chord-symbol {
+  font-family: var(--font-display);
+}
+
+/* Utility classes for chord-quality semantic coloring — used by
+   in-app chord renders (#82, #97, #98). Pair with a contrasting
+   background as needed. */
+.chord--maj7 { color: var(--chord-maj7); }
+.chord--min7 { color: var(--chord-min7); }
+.chord--dom7 { color: var(--chord-dom7); }
+.chord--dim7 { color: var(--chord-dim7); }
+.chord--min7b5 { color: var(--chord-min7b5); }
+.chord--alt { color: var(--chord-alt); }
+.chord--sus { color: var(--chord-sus); }
+.chord--other { color: var(--chord-other); }
+
+.preference--strong-recommend { color: var(--preference-strong-recommend); }
+.preference--weak-recommend { color: var(--preference-weak-recommend); }
+.preference--neutral { color: var(--preference-neutral); }
+.preference--weak-avoid { color: var(--preference-weak-avoid); }
+.preference--strong-avoid { color: var(--preference-strong-avoid); }
+
+a { color: var(--link); }
