@@ -7,6 +7,7 @@ assertion.
 
 from __future__ import annotations
 
+import secrets
 from io import StringIO
 
 from django.contrib.auth import get_user_model
@@ -59,10 +60,12 @@ class PasswordResetTemplateTests(TestCase):
 
     def setUp(self):
         mail.outbox = []
+        # secrets.token_urlsafe avoids hardcoded-password false positives
+        # from secret scanners; the password text isn't asserted on.
         self.user = User.objects.create_user(
             username="trevor",
             email="trevor@example.com",
-            password="testpw1234!",
+            password=secrets.token_urlsafe(16),
         )
 
     def test_password_reset_email_uses_ellington_subject(self):
