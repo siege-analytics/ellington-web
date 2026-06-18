@@ -1,0 +1,47 @@
+{% extends "rule_review/base.html" %}
+
+{% block title %}Review queue — Ellington{% endblock %}
+
+{% block content %}
+<h1>Maintainer review queue</h1>
+
+<p>
+  Rules sorted by signal: reject count → close-but count → comment count.
+  Empty queue = no rules have signal accumulated yet.
+</p>
+
+{% if page_obj %}
+<table>
+  <thead>
+    <tr>
+      <th>Master</th>
+      <th>Rule</th>
+      <th>Reject</th>
+      <th>Close-but</th>
+      <th>Comments</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for rule in page_obj %}
+    <tr>
+      <td>{{ rule.master.name }}</td>
+      <td><a href="{% url 'rule_review:rule_detail' rule.pk %}">{{ rule.name|truncatechars:60 }}</a></td>
+      <td><span class="badge badge--reject">{{ rule.reject_count }}</span></td>
+      <td><span class="badge badge--close_but">{{ rule.close_but_count }}</span></td>
+      <td>{{ rule.comment_count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p>
+  Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}.
+  {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← Previous</a>{% endif %}
+  {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next →</a>{% endif %}
+</p>
+{% else %}
+<div class="empty-state">
+  <p>Queue is empty — no rules have reject / close-but / comment signal yet.</p>
+</div>
+{% endif %}
+{% endblock %}

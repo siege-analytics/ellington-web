@@ -1,0 +1,77 @@
+{% extends "rule_review/base.html" %}
+
+{% block title %}Engine rules — Ellington{% endblock %}
+
+{% block content %}
+<h1>Engine rules</h1>
+
+<form method="get" style="margin-bottom: 1.5em;">
+  <label for="master">Master:</label>
+  <input id="master" name="master" type="text" value="{{ filter_master }}" placeholder="slug, e.g. joe-pass">
+
+  <label for="quality">Quality binding:</label>
+  <input id="quality" name="quality" type="text" value="{{ filter_quality }}" placeholder="e.g. dom7">
+
+  <label for="my_verdict">My verdict:</label>
+  <select id="my_verdict" name="my_verdict">
+    <option value="">All</option>
+    <option value="unjudged" {% if filter_my_verdict == "unjudged" %}selected{% endif %}>Unjudged</option>
+    {% for value, label in verdict_choices %}
+      <option value="{{ value }}" {% if filter_my_verdict == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  <input type="submit" value="Filter">
+</form>
+
+{% if page_obj %}
+<table>
+  <thead>
+    <tr>
+      <th>Master</th>
+      <th>Rule</th>
+      <th>Quality</th>
+      <th>Pref</th>
+      <th>Accept</th>
+      <th>Close-but</th>
+      <th>Reject</th>
+      <th>Comments</th>
+      <th>My verdict</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for rule in page_obj %}
+    <tr>
+      <td>{{ rule.master.name }}</td>
+      <td><a href="{% url 'rule_review:rule_detail' rule.pk %}">{{ rule.name|truncatechars:60 }}</a></td>
+      <td>{{ rule.quality_binding|join:", " }}</td>
+      <td>{{ rule.preference }}</td>
+      <td>{{ rule.accept_count }}</td>
+      <td>{{ rule.close_but_count }}</td>
+      <td>{{ rule.reject_count }}</td>
+      <td>{{ rule.comment_count }}</td>
+      <td>
+        {% if rule.my_verdict %}
+          <span class="badge badge--{{ rule.my_verdict }}">{{ rule.my_verdict }}</span>
+        {% else %}
+          <em>—</em>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p>
+  Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}.
+  {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}&master={{ filter_master }}&quality={{ filter_quality }}&my_verdict={{ filter_my_verdict }}">← Previous</a>
+  {% endif %}
+  {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}&master={{ filter_master }}&quality={{ filter_quality }}&my_verdict={{ filter_my_verdict }}">Next →</a>
+  {% endif %}
+</p>
+{% else %}
+<div class="empty-state">No rules match.</div>
+{% endif %}
+{% endblock %}
