@@ -326,3 +326,53 @@ class Follow(models.Model):
 
     def __str__(self) -> str:
         return f"Follow({self.follower_id} → {self.followed_id})"
+
+
+# ---------------------------------------------------------------------------
+# DirectMessage (epic #96 sub-ticket g / #124)
+# ---------------------------------------------------------------------------
+
+
+class DirectMessage(models.Model):
+    """1:1 message between two users. Plain text v1.
+
+    PROTECT on both FKs so deletion-via-sentinel keeps the message
+    visible to the surviving participant. Read receipt (\`read_at\`)
+    captured when the recipient opens the thread.
+    """
+
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="dms_sent",
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="dms_received",
+    )
+    body = models.TextField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        ordering = ["sent_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(sender=models.F("recipient")),
+                name="dm_no_self_send",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["sender", "recipient", "sent_at"],
+                name="dm_pair_chrono_idx",
+            ),
+            models.Index(
+                fields=["recipient", "read_at"],
+                name="dm_recipient_unread_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"DirectMessage({self.sender_id} → {self.recipient_id} @ {self.sent_at:%Y-%m-%d %H:%M})"

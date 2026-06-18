@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import AccountDeletionAudit, Follow, Goal, UserProfile
+from .models import (
+    AccountDeletionAudit,
+    DirectMessage,
+    Follow,
+    Goal,
+    UserProfile,
+)
 
 
 class GoalInline(admin.TabularInline):
@@ -68,3 +74,12 @@ class FollowAdmin(admin.ModelAdmin):
     search_fields = ("follower__username", "followed__username")
     readonly_fields = ("created_at",)
     raw_id_fields = ("follower", "followed")
+
+
+@admin.register(DirectMessage)
+class DirectMessageAdmin(admin.ModelAdmin):
+    list_display = ("sender", "recipient", "sent_at", "read_at")
+    list_filter = ("sent_at", "read_at")
+    search_fields = ("sender__username", "recipient__username", "body")
+    readonly_fields = ("sent_at", "read_at")
+    raw_id_fields = ("sender", "recipient")

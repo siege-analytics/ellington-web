@@ -330,3 +330,110 @@ def feed(request: HttpRequest) -> HttpResponse:
         "recent_studios": recent_studios,
         "recent_comments": recent_comments,
     })
+
+
+# ---------------------------------------------------------------------------
+# Direct messages (epic #96 sub-ticket g / #124)
+# ---------------------------------------------------------------------------
+
+
+@require_http_methods(["GET"])
+def dm_inbox(request: HttpRequest) -> HttpResponse:
+    """Inbox at /messages/. Distinct conversation partners + last
+    message preview + unread count."""
+    from django.db.models import Max, Q
+
+    from .models import DirectMessage
+
+    if not request.user.is_authenticated:
+        from django.shortcuts import resolve_url
+        return redirect(f"{resolve_url('login')}?next=/messages/")
+
+    # Partners: any other user who has either sent to me or received from me
+    sent_to_others = (
+        DirectMessage.objects
+        .filter(sender=request.user)
+        .values_list("recipient_id", flat=True)
+        .distinct()
+    )
+    received_from_others = (
+        DirectMessage.objects
+        .filter(recipient=request.user)
+        .values_list("sender_id", flat=True)
+        .distinct()
+    )
+    partner_ids = set(sent_to_others) | set(received_from_others)
+
+    conversations = []
+    for partner_id in partner_ids:
+        last_msg = (
+            DirectMessage.objects
+            .filter(
+                Q(sender=request.user, recipient_id=partner_id)
+                | Q(sender_id=partner_id, recipient=request.user)
+            )
+            .order_by("-sent_at")
+            .first()
+        )
+        unread_count = DirectMessage.objects.filter(
+            sender_id=partner_id, recipient=request.user,
+            read_at__isnull=True,
+        ).count()
+        partner = User.objects.filter(pk=partner_id).first()
+        if partner and last_msg:
+            conversations.append({
+                "partner": partner,
+                "last_msg": last_msg,
+                "unread_count": unread_count,
+            })
+
+    conversations.sort(key=lambda c: c["last_msg"].sent_at, reverse=True)
+    return render(request, "core/dm_inbox.html", {"conversations": conversations})
+
+
+@require_http_methods(["GET", "POST"])
+def dm_thread(request: HttpRequest, username: str) -> HttpResponse:
+    """1:1 thread at /messages/<username>/. POST sends a new message;
+    GET marks all incoming as read."""
+    from django.db.models import Q
+    from django.shortcuts import get_object_or_404
+    from django.utils import timezone
+
+    from .models import DirectMessage
+
+    if not request.user.is_authenticated:
+        from django.shortcuts import resolve_url
+        return redirect(f"{resolve_url('login')}?next=/messages/{username}/")
+
+    partner = get_object_or_404(User, username=username, is_active=True)
+    if partner.pk == request.user.pk:
+        messages.error(request, "You can't message yourself.")
+        return redirect("dm_inbox")
+
+    if request.method == "POST":
+        body = (request.POST.get("body") or "").strip()
+        if not body:
+            messages.error(request, "message can't be empty")
+            return redirect("dm_thread", username=username)
+        DirectMessage.objects.create(
+            sender=request.user, recipient=partner, body=body,
+        )
+        return redirect("dm_thread", username=username)
+
+    # Mark all incoming from partner as read
+    DirectMessage.objects.filter(
+        sender=partner, recipient=request.user, read_at__isnull=True,
+    ).update(read_at=timezone.now())
+
+    thread = list(
+        DirectMessage.objects.filter(
+            Q(sender=request.user, recipient=partner)
+            | Q(sender=partner, recipient=request.user)
+        )
+        .select_related("sender", "recipient")
+        .order_by("sent_at")
+    )
+
+    return render(request, "core/dm_thread.html", {
+        "partner": partner, "thread": thread,
+    })
