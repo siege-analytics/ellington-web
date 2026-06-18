@@ -288,7 +288,7 @@ class Follow(models.Model):
 
     PROTECT on both FKs so the follow audit trail survives via the
     sentinel-user anonymize path. Deletion of either side via
-    \`delete_user_account\` repoints both ends through the sentinel.
+    `delete_user_account` repoints both ends through the sentinel.
     """
 
     follower = models.ForeignKey(
@@ -313,7 +313,7 @@ class Follow(models.Model):
                 name="follow_follower_followed_unique",
             ),
             models.CheckConstraint(
-                check=~models.Q(follower=models.F("followed")),
+                condition=~models.Q(follower=models.F("followed")),
                 name="follow_no_self_follow",
             ),
         ]
@@ -337,7 +337,7 @@ class DirectMessage(models.Model):
     """1:1 message between two users. Plain text v1.
 
     PROTECT on both FKs so deletion-via-sentinel keeps the message
-    visible to the surviving participant. Read receipt (\`read_at\`)
+    visible to the surviving participant. Read receipt (`read_at`)
     captured when the recipient opens the thread.
     """
 
@@ -359,7 +359,7 @@ class DirectMessage(models.Model):
         ordering = ["sent_at"]
         constraints = [
             models.CheckConstraint(
-                check=~models.Q(sender=models.F("recipient")),
+                condition=~models.Q(sender=models.F("recipient")),
                 name="dm_no_self_send",
             ),
         ]

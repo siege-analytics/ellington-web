@@ -513,7 +513,7 @@ class ChartComment(models.Model):
             # casts. SQLite (used in tests) handles the same shape.
             models.CheckConstraint(
                 name="chartcomment_one_anchor",
-                check=(
+                condition=(
                     models.Q(song__isnull=False, section__isnull=True, chord_event__isnull=True)
                     | models.Q(song__isnull=True, section__isnull=False, chord_event__isnull=True)
                     | models.Q(song__isnull=True, section__isnull=True, chord_event__isnull=False)

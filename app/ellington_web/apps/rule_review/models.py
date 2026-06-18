@@ -60,7 +60,7 @@ class Response(models.Model):
     """One pedagogue's verdict on one EngineRule.
 
     Unique per (rule, user) — revisable, not appendable. Updates to
-    \`comment\` / \`verdict\` / \`rejection_axis\` overwrite the prior values;
+    `comment` / `verdict` / `rejection_axis` overwrite the prior values;
     the comment thread (RuleComment) handles longitudinal discussion.
 
     Permission: only users with apps.core.roles.is_pedagogue may create.

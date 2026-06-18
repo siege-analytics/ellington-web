@@ -791,7 +791,7 @@ class TeacherStudent(models.Model):
                 name="teacherstudent_active_unique",
             ),
             models.CheckConstraint(
-                check=~models.Q(teacher=models.F("student")),
+                condition=~models.Q(teacher=models.F("student")),
                 name="teacherstudent_no_self_teach",
             ),
         ]
