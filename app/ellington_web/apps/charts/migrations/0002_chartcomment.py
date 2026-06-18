@@ -95,7 +95,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="chartcomment",
             constraint=models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(
                         song__isnull=False,
                         section__isnull=True,

@@ -2,17 +2,17 @@
 
 The flow itself — anonymize ground-truth artifacts, hard-delete personal
 artifacts, write an AccountDeletionAudit row — is one function that
-both the admin management command (\``delete_user_account``) and the
-self-service view (\`/accounts/delete/\` per #112) share. Keeping this
+both the admin management command (``delete_user_account``) and the
+self-service view (`/accounts/delete/` per #112) share. Keeping this
 in a stand-alone module avoids import cycles between
-\`management.commands.\*\` and \`views.\*\`.
+`management.commands.*` and `views.*`.
 
 Per epic #96 sub-ticket (a): personal artifacts (Goals, the
 UserProfile) cascade-delete with the User; ground-truth artifacts
 (comments, engine-rule responses) are repointed via the
-\`ANONYMIZE_REGISTRY\` so threads + ground-truth verdicts survive.
+`ANONYMIZE_REGISTRY` so threads + ground-truth verdicts survive.
 The registry lives in
-\`apps.core.management.commands.delete_user_account\` for now —
+`apps.core.management.commands.delete_user_account` for now —
 sub-tickets (d)/(e)/(#98) register their models there at app-ready
 time.
 """

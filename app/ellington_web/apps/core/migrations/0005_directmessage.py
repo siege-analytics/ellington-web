@@ -55,7 +55,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="directmessage",
             constraint=models.CheckConstraint(
-                check=models.Q(("sender", models.F("recipient")), _negated=True),
+                condition=models.Q(("sender", models.F("recipient")), _negated=True),
                 name="dm_no_self_send",
             ),
         ),

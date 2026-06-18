@@ -76,7 +76,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="teacherstudent",
             constraint=models.CheckConstraint(
-                check=models.Q(("teacher", models.F("student")), _negated=True),
+                condition=models.Q(("teacher", models.F("student")), _negated=True),
                 name="teacherstudent_no_self_teach",
             ),
         ),
