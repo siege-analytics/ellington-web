@@ -1,0 +1,52 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Thread with {{ partner.username }} — Ellington</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <style>
+    body { max-width: 720px; margin: 2em auto; padding: 0 1em; font-family: var(--font-body); }
+    h1 { font-family: var(--font-display); }
+    .msg { padding: 0.5em 1em; margin: 0.5em 0; border-radius: 8px; }
+    .msg.mine { background: var(--bg-elev); margin-left: 4em; }
+    .msg.theirs { background: var(--bg); margin-right: 4em; }
+    .meta { color: var(--fg-muted); font-size: 0.85em; }
+    form textarea {
+      width: 100%; padding: 0.4em; border: 1px solid #aaa;
+      border-radius: 3px; font: inherit; min-height: 4em;
+    }
+    button {
+      padding: 0.5em 1em; background: var(--link); color: white;
+      border: none; border-radius: 3px; cursor: pointer;
+    }
+    nav { border-bottom: 1px solid var(--bg-border); padding-bottom: 0.5em; margin-bottom: 1em; }
+    nav a { margin-right: 1em; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="{% url 'dm_inbox' %}">← Inbox</a>
+    <a href="{% url 'user_profile' partner.username %}">{{ partner.username }}'s profile</a>
+  </nav>
+
+  <h1>{{ partner.username }}</h1>
+
+  {% for m in thread %}
+    <div class="msg {% if m.sender == user %}mine{% else %}theirs{% endif %}">
+      <div class="meta">
+        <strong>{{ m.sender.username }}</strong> · {{ m.sent_at|date:"Y-m-d H:i" }}
+      </div>
+      <div>{{ m.body|linebreaks }}</div>
+    </div>
+  {% empty %}
+    <p><em>No messages yet — say hi.</em></p>
+  {% endfor %}
+
+  <form method="post">
+    {% csrf_token %}
+    <p><textarea name="body" required maxlength="4000" placeholder="Type a message…"></textarea></p>
+    <p><button type="submit">Send</button></p>
+  </form>
+</body>
+</html>

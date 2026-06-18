@@ -38,6 +38,8 @@ urlpatterns = [
     path("users/<str:username>/follow/", core_views.follow_user, name="follow_user"),
     path("users/<str:username>/unfollow/", core_views.unfollow_user, name="unfollow_user"),
     path("feed/", core_views.feed, name="feed"),
+    path("messages/", core_views.dm_inbox, name="dm_inbox"),
+    path("messages/<str:username>/", core_views.dm_thread, name="dm_thread"),
 ]
 
 # In dev, Daphne serves user-uploaded recordings from MEDIA_ROOT. In
