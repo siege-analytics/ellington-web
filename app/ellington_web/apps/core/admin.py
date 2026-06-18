@@ -5,6 +5,7 @@ from .models import (
     DirectMessage,
     Follow,
     Goal,
+    RolePromotionAudit,
     UserProfile,
 )
 
@@ -83,3 +84,26 @@ class DirectMessageAdmin(admin.ModelAdmin):
     search_fields = ("sender__username", "recipient__username", "body")
     readonly_fields = ("sent_at", "read_at")
     raw_id_fields = ("sender", "recipient")
+
+
+@admin.register(RolePromotionAudit)
+class RolePromotionAuditAdmin(admin.ModelAdmin):
+    list_display = (
+        "target_username", "field_name",
+        "old_value", "new_value",
+        "promoted_by_username", "promoted_at",
+    )
+    list_filter = ("field_name", "promoted_at")
+    search_fields = ("target_username", "promoted_by_username")
+    readonly_fields = (
+        "target_user", "target_username",
+        "promoted_by", "promoted_by_username",
+        "field_name", "old_value", "new_value",
+        "reason", "promoted_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

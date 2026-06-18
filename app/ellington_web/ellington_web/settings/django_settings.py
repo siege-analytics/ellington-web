@@ -65,6 +65,10 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'apps.core.auth.middleware.AuthentikHeaderMiddleware',
+    # CurrentUserMiddleware must sit AFTER any auth middleware so
+    # request.user is populated. Used by apps.core.signals to attribute
+    # role-promotion audit rows to the request user (#131).
+    'apps.core.middleware.CurrentUserMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
