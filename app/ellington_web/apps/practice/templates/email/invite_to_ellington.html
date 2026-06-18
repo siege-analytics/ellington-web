@@ -1,0 +1,20 @@
+{% extends "email/_base.html" %}
+
+{% block title %}You've been invited to Ellington{% endblock %}
+
+{% block body %}
+<p>Hi{% if invite.name_hint %} {{ invite.name_hint }}{% endif %},</p>
+
+<p><strong>{{ sharer.username }}</strong> invited you to Ellington — a practice and feedback web app for jazz guitarists — and shared a recording with you.</p>
+
+{% if share.share_note %}
+<p>They left a note:</p>
+<blockquote style="border-left: 3px solid #d9cdb3; margin: 1em 0; padding: 0.5em 1em; color: #555;">
+  {{ share.share_note }}
+</blockquote>
+{% endif %}
+
+<p><a href="{{ accept_url }}">Sign up to listen and comment →</a></p>
+
+<p><small>This link expires in 30 days.</small></p>
+{% endblock %}

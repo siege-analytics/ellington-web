@@ -19,4 +19,10 @@ urlpatterns = [
         views.recording_reanalyze,
         name="recording_reanalyze",
     ),
+    path(
+        "recordings/<int:recording_pk>/share/",
+        views.share_recording,
+        name="share_recording",
+    ),
+    path("shared/", views.shared_with_me, name="shared_with_me"),
 ]

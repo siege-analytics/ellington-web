@@ -393,3 +393,150 @@ class PracticeSegment(models.Model):
 
     def __str__(self) -> str:
         return f"PracticeSegment({self.session_id}:{self.start_ms}-{self.end_ms}ms)"
+
+
+# ---------------------------------------------------------------------------
+# Recording sharing + invite-a-friend (epic #96 sub-ticket b / #108)
+# ---------------------------------------------------------------------------
+
+
+class Invite(models.Model):
+    """An invitation to join Ellington, attached to one or more
+    pending RecordingShares.
+
+    Created when a sharer enters the email of someone who's NOT yet
+    in the system. The token URL is sent via email; clicking it leads
+    to the signup form. On signup the invite is redeemed and any
+    anchored RecordingShares are realized (recipient FK backfilled).
+
+    Token is 256-bit URL-safe (``secrets.token_urlsafe(32)``).
+    """
+
+    token = models.CharField(
+        max_length=64,
+        unique=True,
+        db_index=True,
+        help_text="URL-safe random token. 256-bit entropy.",
+    )
+    inviter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="invites_sent",
+        help_text="Who sent the invite. PROTECT so audit history"
+        " survives user deletion via the sentinel-user repoint.",
+    )
+    email = models.EmailField(
+        help_text="Recipient email address — where the invite was sent.",
+    )
+    name_hint = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text="Optional display name for the recipient,"
+        " used in the invite email body.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        help_text="Token expiry. Default 30 days from creation; set by"
+        " the form layer, NOT by a model default, so the expiry window"
+        " is visible at the call site.",
+    )
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    redeemed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invites_redeemed",
+        help_text="The User row created when the invite was accepted."
+        " Null until then.",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["email", "-created_at"],
+                name="invite_email_recent_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        state = "redeemed" if self.accepted_at else "pending"
+        return f"Invite({self.email}:{state})"
+
+    @property
+    def is_redeemed(self) -> bool:
+        return self.accepted_at is not None
+
+    def is_expired(self, now=None) -> bool:
+        """Return True if the invite's expiry is in the past."""
+        from django.utils import timezone
+
+        ref = now or timezone.now()
+        return self.expires_at <= ref
+
+
+class RecordingShare(models.Model):
+    """One Recording shared by its owner with one recipient.
+
+    Two paths:
+    - ``recipient`` set + ``invite`` null → direct share with an
+      existing user.
+    - ``recipient`` null + ``invite`` set → pending share, materializes
+      when the invitee signs up via the invite link.
+
+    Both fields nullable; uniqueness is enforced at the form layer
+    (one share per recording per recipient OR per pending invite-email).
+    """
+
+    recording = models.ForeignKey(
+        "Recording",
+        on_delete=models.CASCADE,
+        related_name="shares",
+    )
+    sharer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="recording_shares_sent",
+        help_text="Who initiated the share. PROTECT — audit trail.",
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="recording_shares_received",
+        help_text="The User who can see the Recording. Null until an"
+        " anchored Invite is redeemed; backfilled then. PROTECT so"
+        " account deletion via the sentinel-user repoint preserves"
+        " the share's audit shape.",
+    )
+    invite = models.ForeignKey(
+        Invite,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="anchored_shares",
+        help_text="The Invite this share is waiting on. Null once the"
+        " invitee has signed up; recipient is set then.",
+    )
+    share_note = models.TextField(
+        blank=True,
+        help_text="Optional message the sharer attached.",
+    )
+    shared_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-shared_at"]
+        indexes = [
+            models.Index(
+                fields=["recipient", "-shared_at"],
+                name="recshare_recipient_recent_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        if self.recipient_id:
+            return f"RecordingShare(rec={self.recording_id} → user={self.recipient_id})"
+        return f"RecordingShare(rec={self.recording_id} → pending invite={self.invite_id})"

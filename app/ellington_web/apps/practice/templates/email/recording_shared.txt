@@ -1,0 +1,14 @@
+{% autoescape off %}Hi {{ share.recipient.username }},
+
+{{ sharer.username }} shared a recording with you on Ellington.
+
+{% if share.share_note %}They left a note:
+
+  "{{ share.share_note }}"
+
+{% endif %}See it here:
+
+{{ site_origin }}/practice/shared/
+
+— Ellington
+{% endautoescape %}
