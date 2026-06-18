@@ -9,9 +9,11 @@ from .models import (
     PracticeSession,
     Recording,
     RecordingComment,
+    RecordingCommentAcknowledgement,
     RecordingShare,
     Studio,
     StudioMember,
+    TeacherStudent,
 )
 
 
@@ -167,3 +169,20 @@ class StudioMemberAdmin(admin.ModelAdmin):
     search_fields = ("studio__slug", "user__username")
     readonly_fields = ("joined_at",)
     raw_id_fields = ("studio", "user", "invited_by")
+
+
+@admin.register(TeacherStudent)
+class TeacherStudentAdmin(admin.ModelAdmin):
+    list_display = ("teacher", "student", "studio", "created_at", "ended_at")
+    list_filter = ("ended_at",)
+    search_fields = ("teacher__username", "student__username")
+    readonly_fields = ("created_at",)
+    raw_id_fields = ("teacher", "student", "studio")
+
+
+@admin.register(RecordingCommentAcknowledgement)
+class RecordingCommentAcknowledgementAdmin(admin.ModelAdmin):
+    list_display = ("comment", "acknowledged_by", "acknowledged_at")
+    search_fields = ("acknowledged_by__username", "note")
+    readonly_fields = ("acknowledged_at",)
+    raw_id_fields = ("comment", "acknowledged_by")

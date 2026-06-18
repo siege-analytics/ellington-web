@@ -592,3 +592,77 @@ def studio_leave(request: HttpRequest, slug: str) -> HttpResponse:
     studio.memberships.filter(user=request.user).delete()
     messages.success(request, f"Left '{studio.name}'.")
     return redirect("practice:studio_list")
+
+
+# ---------------------------------------------------------------------------
+# Teacher/student + acknowledgements (epic #96 sub-ticket i / #126)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def declare_teacher_student(request: HttpRequest) -> HttpResponse:
+    """Declare a teacher → student relationship. POST-only.
+
+    Body params: teacher_username, student_username, studio_slug (optional).
+    Permission: only the teacher or admin may declare. Self-teaching
+    rejected at the model layer too.
+    """
+    from .models import Studio, TeacherStudent
+
+    teacher_username = (request.POST.get("teacher_username") or "").strip()
+    student_username = (request.POST.get("student_username") or "").strip()
+    studio_slug = (request.POST.get("studio_slug") or "").strip()
+
+    if not teacher_username or not student_username:
+        messages.error(request, "teacher_username and student_username required")
+        return redirect("practice:studio_list")
+
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    teacher = get_object_or_404(User, username=teacher_username)
+    student = get_object_or_404(User, username=student_username)
+
+    if teacher != request.user and not request.user.is_staff:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Only the teacher (or an admin) may declare.")
+
+    studio = None
+    if studio_slug:
+        studio = get_object_or_404(Studio, slug=studio_slug)
+
+    obj, created = TeacherStudent.objects.get_or_create(
+        teacher=teacher, student=student, studio=studio,
+        ended_at__isnull=True,
+        defaults={},
+    )
+    if created:
+        messages.success(
+            request,
+            f"Declared {teacher.username} → {student.username}.",
+        )
+    else:
+        messages.info(request, "Relationship already exists.")
+    return redirect("user_profile", username=student.username)
+
+
+@login_required
+@require_POST
+def acknowledge_recording_comment(
+    request: HttpRequest, comment_pk: int,
+) -> HttpResponse:
+    """Student acknowledges a teacher's comment. POST-only."""
+    from .models import RecordingComment, RecordingCommentAcknowledgement
+
+    comment = get_object_or_404(RecordingComment, pk=comment_pk)
+    note = (request.POST.get("note") or "").strip()
+
+    RecordingCommentAcknowledgement.objects.update_or_create(
+        comment=comment, acknowledged_by=request.user,
+        defaults={"note": note},
+    )
+    messages.success(request, "Acknowledged.")
+    return redirect(
+        "practice:session_detail", pk=comment.recording.session_id,
+    )
