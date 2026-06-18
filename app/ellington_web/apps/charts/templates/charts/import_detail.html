@@ -1,0 +1,86 @@
+{% extends "charts/base.html" %}
+
+{% block title %}Import #{{ chart_import.pk }} — Ellington{% endblock %}
+
+{% block content %}
+<h1>Import #{{ chart_import.pk }}</h1>
+
+<p>
+  <strong>Status:</strong>
+  <span class="badge badge--{{ chart_import.status }}">{{ chart_import.get_status_display }}</span>
+</p>
+<p>
+  <strong>Songbook:</strong>
+  {{ chart_import.source_songbook.title|default:"(none)" }}
+</p>
+<p>
+  <strong>Submitted:</strong>
+  {{ chart_import.created_at|date:"Y-m-d H:i" }}
+  {% if chart_import.completed_at %}
+    · <strong>Finished:</strong> {{ chart_import.completed_at|date:"Y-m-d H:i" }}
+  {% endif %}
+</p>
+{% if chart_import.page_count %}
+<p>
+  <strong>Pages:</strong>
+  {{ chart_import.page_count }} total,
+  {{ chart_import.pages_succeeded }} succeeded,
+  {{ chart_import.pages_failed }} failed
+</p>
+{% endif %}
+
+{% if page_rows %}
+<h2>Per-page results</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Page</th>
+      <th>Status</th>
+      <th>Song</th>
+      <th>Warnings / errors</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in page_rows %}
+    <tr>
+      <td>{{ row.page_idx|add:1 }}</td>
+      <td><span class="badge badge--{{ row.status|lower }}">{{ row.status }}</span></td>
+      <td>
+        {% if row.song %}
+          {{ row.song.title|default:row.song }}
+        {% else %}
+          <em>—</em>
+        {% endif %}
+      </td>
+      <td>
+        {% if row.failure %}
+          <span style="color:#900;">{{ row.failure }}</span>
+        {% endif %}
+        {% if row.warnings %}
+          <ul style="margin: 0;">
+          {% for w in row.warnings %}<li>{{ w }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+      </td>
+      <td>
+        {% if row.status == "FAILED" %}
+        <form method="post" action="{% url 'charts:import_reprocess' chart_import.pk %}" style="display:inline;">
+          {% csrf_token %}
+          <input type="hidden" name="page_idx" value="{{ row.page_idx }}">
+          <button type="submit">Retry page</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<form method="post" action="{% url 'charts:import_reprocess' chart_import.pk %}" style="margin-top: 1.5em;">
+  {% csrf_token %}
+  <button type="submit">Re-process entire PDF</button>
+</form>
+
+{% endblock %}
