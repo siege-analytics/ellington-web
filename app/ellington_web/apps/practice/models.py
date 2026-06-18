@@ -737,3 +737,118 @@ class StudioMember(models.Model):
 
     def __str__(self) -> str:
         return f"StudioMember({self.studio_id}:{self.user_id}:{self.role})"
+
+
+# ---------------------------------------------------------------------------
+# Teacher / Student (epic #96 sub-ticket i / #126)
+# ---------------------------------------------------------------------------
+
+
+class TeacherStudent(models.Model):
+    """One teacher → student relationship, optionally scoped to a Studio.
+
+    A teacher can have many students; a student can have many teachers
+    (e.g. main instrument + theory). The optional ``studio`` FK scopes
+    the relationship to a specific practice group — when null, the
+    relationship is global.
+
+    ``ended_at`` retains the row after the relationship ends so historical
+    acknowledgement audit survives. Unique constraint covers the
+    active-row case; ended rows can re-appear with a new instance.
+    """
+
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="teaches",
+        help_text="The teacher in the relationship.",
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="studies_with",
+        help_text="The student being taught.",
+    )
+    studio = models.ForeignKey(
+        Studio,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="teacher_student_relationships",
+        help_text="Optional Studio scope. When set, the relationship"
+        " is visible to other members of the Studio.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            # Active (non-ended) row per (teacher, student, studio)
+            models.UniqueConstraint(
+                fields=["teacher", "student", "studio"],
+                condition=models.Q(ended_at__isnull=True),
+                name="teacherstudent_active_unique",
+            ),
+            models.CheckConstraint(
+                check=~models.Q(teacher=models.F("student")),
+                name="teacherstudent_no_self_teach",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["student", "teacher"],
+                name="teacherstudent_student_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        marker = "(ended)" if self.ended_at else ""
+        return f"TeacherStudent({self.teacher_id}→{self.student_id}{marker})"
+
+    @property
+    def is_active(self) -> bool:
+        return self.ended_at is None
+
+
+class RecordingCommentAcknowledgement(models.Model):
+    """Read receipt for a teacher's RecordingComment on their student's
+    Recording.
+
+    Required by sub-ticket (i): teacher comments can't be dismissed by
+    the student until acknowledged. Tracked here rather than on the
+    comment itself so future "acknowledge-with-note" expansion has a
+    landing pad.
+    """
+
+    comment = models.ForeignKey(
+        "RecordingComment",
+        on_delete=models.CASCADE,
+        related_name="acknowledgements",
+    )
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="comment_acknowledgements",
+        help_text="The student (or other recipient) confirming they read"
+        " the teacher's comment.",
+    )
+    acknowledged_at = models.DateTimeField(auto_now_add=True)
+    note = models.TextField(
+        blank=True,
+        help_text="Optional reply note. Distinct from a comment reply"
+        " because it's an acknowledgement-with-context, not a thread"
+        " contribution.",
+    )
+
+    class Meta:
+        ordering = ["-acknowledged_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comment", "acknowledged_by"],
+                name="recordingcommentack_comment_user_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"RecordingCommentAcknowledgement(comment={self.comment_id} by={self.acknowledged_by_id})"
