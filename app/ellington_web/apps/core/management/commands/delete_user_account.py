@@ -27,15 +27,9 @@ from typing import Callable
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
 
-from apps.core.models import (
-    AccountDeletionAudit,
-    DELETED_USER_USERNAME,
-    Goal,
-    UserProfile,
-    get_or_create_deleted_user_sentinel,
-)
+from apps.core.deletion import perform_account_deletion
+from apps.core.models import DELETED_USER_USERNAME
 
 
 # Registry of (artifact_name, callable) pairs. Each callable takes the
@@ -61,7 +55,6 @@ class Command(BaseCommand):
             help="Username of the admin initiating the deletion (for audit log).",
         )
 
-    @transaction.atomic
     def handle(self, *args, **options):
         username = options["username"]
         admin_username = options["initiated_by"]
@@ -88,36 +81,19 @@ class Command(BaseCommand):
                 " only staff users may initiate account deletion."
             )
 
-        sentinel = get_or_create_deleted_user_sentinel()
-        if target.pk == sentinel.pk:
-            raise CommandError("Refusing to delete the sentinel user.")
+        try:
+            audit = perform_account_deletion(target, initiated_by=admin)
+        except ValueError as exc:
+            raise CommandError(str(exc))
 
-        # Count cascade-deletes BEFORE delete (we lose the rows after).
-        goals_count = Goal.objects.filter(user=target).count()
-        profile_count = UserProfile.objects.filter(user=target).count()
-
-        # Run anonymize callbacks. Each repoints the artifact's author
-        # FK to the sentinel and returns the count. v1 registry is
-        # empty; sub-tickets (d) and #98 will append entries.
-        anonymized: dict[str, int] = {}
-        for artifact_name, repoint in ANONYMIZE_REGISTRY:
-            anonymized[artifact_name] = repoint(target, sentinel)
-
-        # Hard-delete the user. Cascades to UserProfile + Goal +
-        # anything else with on_delete=CASCADE pointing at User.
-        target.delete()
-
-        AccountDeletionAudit.objects.create(
-            deleted_username=username,
-            deleted_by=admin,
-            anonymized_artifact_counts={
-                "goals_deleted": goals_count,
-                "profile_deleted": profile_count,
-                **anonymized,
-            },
-        )
-
+        counts = audit.anonymized_artifact_counts
+        other = {
+            k: v for k, v in counts.items()
+            if k not in ("goals_deleted", "profile_deleted")
+        }
         self.stdout.write(self.style.SUCCESS(
-            f"deleted {username}: goals={goals_count} profile={profile_count}"
-            f" anonymized={anonymized}"
+            f"deleted {username}:"
+            f" goals={counts.get('goals_deleted', 0)}"
+            f" profile={counts.get('profile_deleted', 0)}"
+            f" anonymized={other}"
         ))

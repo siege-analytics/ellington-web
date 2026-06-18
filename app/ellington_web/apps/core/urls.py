@@ -12,4 +12,6 @@ app_name = "core"
 
 urlpatterns = [
     path("invite/<str:token>/", views.accept_invite, name="accept_invite"),
+    path("delete/", views.self_delete_account, name="self_delete"),
+    path("deleted/", views.account_deleted, name="account_deleted"),
 ]

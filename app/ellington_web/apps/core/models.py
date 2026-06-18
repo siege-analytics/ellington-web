@@ -224,12 +224,15 @@ class Goal(models.Model):
 
 class AccountDeletionAudit(models.Model):
     """One row per account-deletion event. Populated by the
-    ``delete_user_account`` management command.
+    ``delete_user_account`` management command (admin-initiated) and
+    by the self-service ``/accounts/delete/`` view (self-initiated).
 
-    The deleted user's row is gone, so we keep a denormalized
-    ``deleted_username`` copy. ``deleted_by`` FK points at the admin
-    who initiated the deletion (PROTECT — we don't want to lose audit
-    history if the admin's own account is later deleted).
+    The deleted user's row is gone by the time this is written, so we
+    keep a denormalized ``deleted_username`` + ``initiated_by_username``
+    text snapshot. ``deleted_by`` FK is nullable + SET_NULL because in
+    the self-service path the initiator IS the user being deleted —
+    PROTECT would block the User.delete() call. Admin-initiated paths
+    keep deleted_by set to the still-alive admin row.
     """
 
     deleted_username = models.CharField(
@@ -237,12 +240,23 @@ class AccountDeletionAudit(models.Model):
         help_text="Denormalized — auth.User row is gone by the time"
         " this is written.",
     )
+    initiated_by_username = models.CharField(
+        max_length=150,
+        blank=True,
+        help_text="Denormalized snapshot of who initiated the deletion."
+        " For self-delete this equals deleted_username; for"
+        " admin-initiated it's the admin's username.",
+    )
     deleted_at = models.DateTimeField(auto_now_add=True)
     deleted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name="account_deletions_initiated",
-        help_text="Admin who initiated the deletion.",
+        help_text="Admin who initiated the deletion. Null when the"
+        " user deleted themselves (the FK would point at the now-gone"
+        " row); see initiated_by_username for the text snapshot.",
     )
     anonymized_artifact_counts = models.JSONField(
         default=dict,
