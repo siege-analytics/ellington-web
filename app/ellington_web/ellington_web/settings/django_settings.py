@@ -221,5 +221,6 @@ REPLY_TO_EMAIL = os.environ.get("REPLY_TO_EMAIL", "dheeraj.chand@gmail.com")
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Grappelli Configuration
-GRAPPELLI_ADMIN_TITLE = 'GeoDjango Simple Template Admin'
+GRAPPELLI_ADMIN_TITLE = "Ellington"
+GRAPPELLI_ADMIN_HEADLINE = "Ellington — Practice Feedback"
 GRAPPELLI_SWITCH_USER = True

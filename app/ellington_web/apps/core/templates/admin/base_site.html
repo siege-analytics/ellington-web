@@ -1,0 +1,41 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{# Brand the Grappelli/Django admin to match the rest of the app (#162).
+   Overrides via apps.core.templates because TEMPLATES.APP_DIRS=True
+   resolves it before falling through to Grappelli's own base_site.html.
+
+   Two intentional surface tweaks:
+   1. Pull in brand.css so the chord-quality + verdict palette tokens
+      (#102 / #151) are available inside the admin if any custom
+      ModelAdmin render needs them later.
+   2. Lightly restyle Grappelli's branding bar to use the brand palette
+      instead of Grappelli's default greys. Stays minimal — the goal is
+      "this is Ellington" not a full theme.
+#}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <style>
+    /* Grappelli's branding bar — paint with the brand palette. The
+       admin is a Dheeraj-only surface today so we keep the light
+       theme; brand.css's dark-mode block applies on data-theme="dark"
+       if Grappelli grows that. */
+    #grp-header,
+    #grp-user-tools {
+      background: var(--bg-elev, #fffbf2);
+      border-bottom: 1px solid var(--bg-border, #d9cdb3);
+    }
+    #grp-header h1#grp-admin-title,
+    #grp-header h1#grp-admin-title a {
+      font-family: var(--font-display, serif);
+      color: var(--fg, #1a1a1a);
+      letter-spacing: 0.02em;
+    }
+    #grp-header a,
+    #grp-user-tools a {
+      color: var(--link, #8a3324);
+    }
+  </style>
+{% endblock %}
