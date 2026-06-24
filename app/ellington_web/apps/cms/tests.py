@@ -253,3 +253,92 @@ class ModeratorGroupSyncTests(TestCase):
 
         after = set(user.groups.values_list("name", flat=True))
         self.assertEqual(before, after)
+
+
+# ---------------------------------------------------------------------------
+# #204 — Wagtail workflow gate (Pedagogue Review)
+# ---------------------------------------------------------------------------
+
+
+class PedagogueWorkflowGateTests(TestCase):
+    """Workflow exists post-migration; Pedagogue group no longer
+    has publish; Moderator group is the approver."""
+
+    def test_workflow_exists(self):
+        try:
+            from wagtail.models import Workflow
+        except ImportError:
+            self.skipTest("wagtail not installed")
+        self.assertTrue(
+            Workflow.objects.filter(name="Pedagogue Review").exists(),
+            "Migration 0005_pedagogue_workflow should have created the "
+            "Pedagogue Review workflow.",
+        )
+
+    def test_workflow_assigned_to_root(self):
+        try:
+            from wagtail.models import Page, WorkflowPage
+        except ImportError:
+            self.skipTest("wagtail not installed")
+        root = Page.objects.filter(pk=1).first()
+        if root is None:
+            self.skipTest("Wagtail root page not present")
+        self.assertTrue(
+            WorkflowPage.objects.filter(page=root).exists(),
+            "Workflow should be assigned to the root page.",
+        )
+
+    def test_pedagogue_publish_revoked_when_subtree_exists(self):
+        """If a configured subtree exists, the Pedagogue group has no
+        publish perm on it after 0006."""
+        try:
+            from wagtail.models import GroupPagePermission, Page
+        except ImportError:
+            self.skipTest("wagtail not installed")
+
+        group = Group.objects.filter(name=PEDAGOGUE_GROUP_NAME).first()
+        if group is None:
+            self.skipTest("Pedagogue group not seeded")
+
+        from django.conf import settings
+        slugs = getattr(settings, "PEDAGOGUE_AUTHORABLE_PAGE_SLUGS", [])
+
+        for slug in slugs:
+            page = Page.objects.filter(slug=slug, depth=2).first()
+            if page is None:
+                continue
+            self.assertEqual(
+                GroupPagePermission.objects.filter(
+                    group=group, page=page, permission_type="publish",
+                ).count(),
+                0,
+                f"Pedagogue should not have publish on /{slug}/.",
+            )
+            # add + change still present
+            for ptype in ("add", "change"):
+                self.assertGreater(
+                    GroupPagePermission.objects.filter(
+                        group=group, page=page, permission_type=ptype,
+                    ).count(),
+                    0,
+                    f"Pedagogue should retain {ptype} on /{slug}/.",
+                )
+
+    def test_moderator_keeps_publish(self):
+        try:
+            from wagtail.models import GroupPagePermission, Page
+        except ImportError:
+            self.skipTest("wagtail not installed")
+        mod = Group.objects.filter(name=MODERATOR_GROUP_NAME).first()
+        if mod is None:
+            self.skipTest("Moderator group not seeded")
+        root = Page.objects.filter(pk=1).first()
+        if root is None:
+            self.skipTest("Wagtail root not present")
+        self.assertGreater(
+            GroupPagePermission.objects.filter(
+                group=mod, page=root, permission_type="publish",
+            ).count(),
+            0,
+            "Moderator should retain publish on root — they ARE the approvers.",
+        )
