@@ -7,43 +7,15 @@
   <title>{% block title %}Charts — Ellington{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'css/brand.css' %}">
   <style>
-    body { max-width: 960px; margin: 2em auto; padding: 0 1em; line-height: 1.5; }
-    nav { border-bottom: 1px solid var(--bg-border); padding-bottom: 0.5em; margin-bottom: 1.5em; }
-    nav a { margin-right: 1em; }
-    h1 { margin-top: 0.5em; }
-    .messages { list-style: none; padding: 0; }
-    .messages li {
-      background: #eef; padding: 0.5em 1em;
-      border-left: 3px solid #66f; margin-bottom: 0.5em;
-    }
-    .messages li.error { background: #fee; border-left-color: #f66; }
-    .messages li.success { background: #efe; border-left-color: #6c6; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { text-align: left; padding: 0.4em 0.6em; border-bottom: 1px solid #eee; }
-    .empty-state { padding: 2em; text-align: center; color: var(--fg-muted); }
-    .errorlist { color: #c33; padding-left: 1.2em; }
-    .helptext { color: var(--fg-muted); font-size: 0.9em; display: block; margin-top: 0.2em; }
-    button, input[type="submit"] {
-      padding: 0.5em 1em; background: var(--link); color: white;
-      border: none; border-radius: 3px; cursor: pointer;
-    }
-    button.destructive { background: var(--chord-dim7); }
-    form p { margin: 1em 0; }
-    form label { display: block; font-weight: bold; margin-bottom: 0.2em; }
-    form input, form select, form textarea {
-      width: 100%; padding: 0.4em;
-      border: 1px solid #aaa; border-radius: 3px; font: inherit;
-    }
-    .badge {
-      display: inline-block; padding: 0.15em 0.6em;
-      border-radius: 10px; font-size: 0.85em; font-weight: bold;
-    }
-    .badge--pending { background: #eee; color: #555; }
-    .badge--queued { background: #ddf; color: #336; }
-    .badge--running { background: #ffe; color: #770; }
-    .badge--complete { background: #efe; color: #060; }
-    .badge--partial { background: #fea; color: #850; }
-    .badge--failed { background: #fee; color: #900; }
+    /* Common app-shell rules (body, nav, table, .messages, button,
+       form, .empty-state, .helptext, .errorlist) live in brand.css
+       per #170. Only charts-specific .badge--<status> stays here. */
+    .badge--pending  { background: #eee; color: #555; }
+    .badge--queued   { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
+    .badge--running  { background: #ffe; color: #770; }
+    .badge--complete { background: var(--verdict-accept-bg); color: var(--verdict-accept); }
+    .badge--partial  { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
+    .badge--failed   { background: var(--verdict-reject-bg); color: var(--verdict-reject); }
   </style>
 </head>
 <body>

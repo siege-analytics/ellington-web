@@ -191,6 +191,98 @@ small, .text-sm  { font-size: var(--text-sm); }
 
 a { color: var(--link); }
 
+/* ---------------------------------------------------------------- */
+/* App-shell baseline (#170). Common chrome rules previously
+   duplicated across charts/practice/rule_review/<base>.html inline
+   <style> blocks. Per-app width is parameterized via
+   ``--content-width`` (default 960 px); templates that want a wider
+   shell (e.g. rule_review) set it inline on <body> or via a wrapper
+   style block.
+
+   Anything app-specific (.badge--<status>, .chord-grid, .rule-card,
+   .anchor-quote) stays in its owning template. */
+
+body {
+  /* --content-width: per-app override; default 960 px */
+  max-width: var(--content-width, 960px);
+  margin: 2em auto;
+  padding: 0 1em;
+}
+
+nav {
+  border-bottom: 1px solid var(--bg-border);
+  padding-bottom: 0.5em;
+  margin-bottom: 1.5em;
+}
+nav a { margin-right: 1em; }
+
+table { border-collapse: collapse; width: 100%; }
+th, td {
+  text-align: left;
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid var(--bg-border);
+  vertical-align: top;
+}
+
+.empty-state {
+  padding: 2em;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.helptext {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  display: block;
+  margin-top: 0.2em;
+}
+
+.errorlist {
+  color: var(--chord-dim7);
+  padding-left: 1.2em;
+}
+
+.messages { list-style: none; padding: 0; }
+.messages li {
+  background: var(--bg-elev);
+  padding: 0.5em 1em;
+  border-left: 3px solid var(--link);
+  margin-bottom: 0.5em;
+}
+.messages li.error {
+  background: var(--verdict-reject-bg);
+  border-left-color: var(--chord-dim7);
+}
+.messages li.success {
+  background: var(--verdict-accept-bg);
+  border-left-color: var(--chord-sus);
+}
+
+button, input[type="submit"] {
+  padding: 0.5em 1em;
+  background: var(--link);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+}
+button.destructive { background: var(--chord-dim7); }
+
+form p { margin: 1em 0; }
+form label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 0.2em;
+}
+form input, form select, form textarea {
+  width: 100%;
+  padding: 0.4em;
+  border: 1px solid var(--bg-border);
+  border-radius: 3px;
+  font: inherit;
+}
+
 /* Verdict badges — used by rule_review (#98, #151) but shaped to be
    reusable from any app that needs a pill-style status indicator.
    Pair with a .badge--<state> modifier to pick the verdict palette. */
