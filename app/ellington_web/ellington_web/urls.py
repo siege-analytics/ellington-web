@@ -29,7 +29,6 @@ urlpatterns = [
     path("accounts/", include("apps.core.urls")),  # invite/<token>/ before django.contrib.auth
     path("accounts/", include("django.contrib.auth.urls")),  # Django auth URLs
     path("api-auth/", include("rest_framework.urls")),
-    path("locations/", include("locations.urls")),
     path("critique/", include("apps.styles.urls")),
     path("practice/", include("apps.practice.urls")),
     path("charts/", include("apps.charts.urls")),

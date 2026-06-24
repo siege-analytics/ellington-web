@@ -45,7 +45,6 @@ INSTALLED_APPS = [
     "django.contrib.postgres",
     "rest_framework",
     'rest_framework_gis',
-    "locations",
     "apps.core",
     "apps.styles",
     "apps.charts",
