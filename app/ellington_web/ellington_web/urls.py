@@ -33,6 +33,7 @@ urlpatterns = [
     path("practice/", include("apps.practice.urls")),
     path("charts/", include("apps.charts.urls")),
     path("rule-review/", include("apps.rule_review.urls")),
+    path("voicings/", include("apps.voicings.urls")),
     path("users/<str:username>/", core_views.user_profile, name="user_profile"),
     path("users/<str:username>/follow/", core_views.follow_user, name="follow_user"),
     path("users/<str:username>/unfollow/", core_views.unfollow_user, name="unfollow_user"),
