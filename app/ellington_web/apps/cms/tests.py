@@ -194,3 +194,62 @@ class PedagogueSubtreeRestrictionTests(TestCase):
             self.skipTest("access_admin permission not installed")
 
         self.assertIn(access_admin, group.permissions.all())
+
+
+# ---------------------------------------------------------------------------
+# #206 — is_staff → Moderator group sync
+# ---------------------------------------------------------------------------
+
+
+MODERATOR_GROUP_NAME = "Moderator"
+
+
+class ModeratorGroupSyncTests(TestCase):
+    """The Moderator group exists post-migration and User.is_staff
+    flips drive Group membership."""
+
+    def test_moderator_group_exists_after_migration(self):
+        self.assertTrue(
+            Group.objects.filter(name=MODERATOR_GROUP_NAME).exists(),
+            "Migration 0004_moderator_group should have created the "
+            "Moderator Wagtail Group.",
+        )
+
+    def test_promotion_adds_user_to_moderator(self):
+        user = User.objects.create_user(
+            username="new-staff", password=secrets.token_urlsafe(16),
+        )
+        # Re-load to populate _initial_is_staff via post_init
+        user = User.objects.get(pk=user.pk)
+        user.is_staff = True
+        user.save()
+
+        group = Group.objects.get(name=MODERATOR_GROUP_NAME)
+        self.assertIn(group, user.groups.all())
+
+    def test_demotion_removes_user_from_moderator(self):
+        user = User.objects.create_user(
+            username="ex-staff", password=secrets.token_urlsafe(16),
+            is_staff=True,
+        )
+        group = Group.objects.get(name=MODERATOR_GROUP_NAME)
+        self.assertIn(group, user.groups.all(), "create_user with is_staff=True should backfill")
+
+        user = User.objects.get(pk=user.pk)
+        user.is_staff = False
+        user.save()
+        self.assertNotIn(group, user.groups.all())
+
+    def test_signal_noop_when_no_change(self):
+        user = User.objects.create_user(
+            username="stable-staff", password=secrets.token_urlsafe(16),
+            is_staff=True,
+        )
+        group = Group.objects.get(name=MODERATOR_GROUP_NAME)
+        before = set(user.groups.values_list("name", flat=True))
+
+        user = User.objects.get(pk=user.pk)
+        user.save()
+
+        after = set(user.groups.values_list("name", flat=True))
+        self.assertEqual(before, after)

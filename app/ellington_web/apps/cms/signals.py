@@ -15,14 +15,18 @@ from __future__ import annotations
 
 import logging
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.db.models.signals import post_save
+from django.db.models.signals import post_init, post_save
 from django.dispatch import receiver
 
 from apps.core.models import UserProfile
 
 
 PEDAGOGUE_GROUP_NAME = "Pedagogue"
+MODERATOR_GROUP_NAME = "Moderator"
+
+User = get_user_model()
 
 log = logging.getLogger(__name__)
 
@@ -64,3 +68,50 @@ def sync_pedagogue_wagtail_group(sender, instance, **kwargs):
         instance.user.groups.add(group)
     else:
         instance.user.groups.remove(group)
+
+
+# ---------------------------------------------------------------------------
+# #206 — sync User.is_staff to Moderator Wagtail group
+# ---------------------------------------------------------------------------
+
+
+@receiver(post_init, sender=User)
+def stash_initial_is_staff(sender, instance, **kwargs):
+    """Stash initial is_staff so post_save can diff. Parallel to
+    apps.core.signals's UserProfile stash."""
+    if instance.pk is not None:
+        instance._initial_is_staff = instance.is_staff
+
+
+@receiver(post_save, sender=User)
+def sync_moderator_wagtail_group(sender, instance, created, **kwargs):
+    """Add / remove the user from the Moderator Wagtail Group when
+    is_staff flips. New users (created=True with is_staff=True) are
+    handled by the initial promotion path."""
+    if created:
+        if instance.is_staff:
+            try:
+                group = Group.objects.get(name=MODERATOR_GROUP_NAME)
+            except Group.DoesNotExist:
+                return
+            instance.groups.add(group)
+        return
+
+    old = getattr(instance, "_initial_is_staff", None)
+    if old is None or old == instance.is_staff:
+        return
+
+    try:
+        group = Group.objects.get(name=MODERATOR_GROUP_NAME)
+    except Group.DoesNotExist:
+        log.warning(
+            "Moderator Wagtail group missing; skipping membership sync "
+            "for %s. Apply apps.cms migration 0004.",
+            instance.pk,
+        )
+        return
+
+    if instance.is_staff:
+        instance.groups.add(group)
+    else:
+        instance.groups.remove(group)
