@@ -93,6 +93,23 @@
   --font-display: "MuseJazz Text", "Bradley Hand", "Comic Sans MS", cursive, serif;
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-symbol: "MuseJazz Symbol", "Bravura Text", serif;
+  /* Monospace stack for tabular chord renders + code (#164). Tabular
+     contexts (chart timelines, engine-rule tables, audio-timeline
+     ledgers) need chord names to align in columns regardless of
+     letter widths — `.chord-symbol--tabular` opts into this stack. */
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "DejaVu Sans Mono", monospace;
+
+  /* Typographic scale (#164). 1.125 ratio, 16 px (1 rem) base.
+     Templates should prefer these tokens over inline font-size so a
+     future scale rotation lands in one place. */
+  --text-xs:   0.75rem;   /* 12 px — captions, helptext, table footnotes */
+  --text-sm:   0.875rem;  /* 14 px — meta lines, badges */
+  --text-base: 1rem;      /* 16 px — body */
+  --text-lg:   1.125rem;  /* 18 px — lead paragraph, h4 */
+  --text-xl:   1.25rem;   /* 20 px — h3 */
+  --text-2xl:  1.5rem;    /* 24 px — h2 */
+  --text-3xl:  1.875rem;  /* 30 px — h1 / wordmark */
 }
 
 [data-theme="dark"] {
@@ -115,18 +132,43 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-body);
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
+/* Typographic baseline (#164). Templates can still override per-component
+   but inherit consistent scale by default. Margins follow Tailwind-ish
+   prose defaults so headings have breathing room without per-template
+   tuning. */
+h1 { font-size: var(--text-3xl); line-height: 1.2;  margin: 0.5em 0; }
+h2 { font-size: var(--text-2xl); line-height: 1.25; margin: 0.6em 0 0.4em; }
+h3 { font-size: var(--text-xl);  line-height: 1.3;  margin: 0.7em 0 0.4em; }
+h4 { font-size: var(--text-lg);  line-height: 1.3;  margin: 0.7em 0 0.3em; }
+h5 { font-size: var(--text-base);line-height: 1.4;  margin: 0.7em 0 0.3em; font-weight: 700; }
+h6 { font-size: var(--text-sm);  line-height: 1.4;  margin: 0.7em 0 0.3em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+
+small, .text-sm  { font-size: var(--text-sm); }
+.text-xs   { font-size: var(--text-xs); }
+.text-base { font-size: var(--text-base); }
+.text-lg   { font-size: var(--text-lg); }
+
 .wordmark {
   font-family: var(--font-display);
-  font-size: 2rem;
+  font-size: var(--text-3xl);
   letter-spacing: 0.02em;
   font-weight: bold;
 }
 
+/* Chord symbol — artistic render (default) uses the lead-sheet display
+   font; tabular render uses the monospace stack so chord names align
+   in columns. Pair `.chord-symbol--tabular` with the base class. */
 .chord-symbol {
   font-family: var(--font-display);
+}
+.chord-symbol--tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
 
 /* Utility classes for chord-quality semantic coloring — used by
