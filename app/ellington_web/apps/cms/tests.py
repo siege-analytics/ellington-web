@@ -107,3 +107,75 @@ class MasterProfilePageTests(TestCase):
     def test_master_profile_carries_shell(self):
         response = self.client.get("/masters/joe-pass/")
         self.assertContains(response, 'id="ellington-nav"')
+
+
+# ---------------------------------------------------------------------------
+# #200 — engine_rule_reference StreamField block
+# ---------------------------------------------------------------------------
+
+
+from apps.cms.blocks import EngineRuleReferenceBlock  # noqa: E402
+from apps.engine_rules.models import EngineRule, EngineRulesBundle  # noqa: E402
+from apps.styles.models import Master as StylesMaster  # noqa: E402
+from datetime import datetime, timezone as dt_timezone  # noqa: E402
+
+
+def _make_engine_rule_bundle():
+    return EngineRulesBundle.objects.create(
+        bundle_version="0.2.0",
+        schema_version="0.2",
+        plugin_commit_sha="b" * 40,
+        built_at=datetime(2026, 6, 24, tzinfo=dt_timezone.utc),
+        total_rules=0,
+        manifest={"bundle_version": "0.2.0"},
+    )
+
+
+class EngineRuleReferenceBlockTests(TestCase):
+    """The block resolves rule_id → live EngineRule at render time."""
+
+    def setUp(self):
+        bundle = _make_engine_rule_bundle()
+        self.master = StylesMaster.objects.create(
+            slug="joe-pass-rb", name="Joe Pass (test)",
+        )
+        self.rule = EngineRule.objects.create(
+            bundle=bundle,
+            master=self.master,
+            work_id="virtuoso",
+            rule_id="joe-pass-r-001",
+            name="prefer 137 shell on Cmaj7",
+            preference=2,
+            quality_binding=["maj7"],
+            applicability_reasons=[],
+            when_predicate={},
+            then_action={"voicing.shape": "shell_137"},
+            anchor="Joe's voicing on Stella, Verve 1973",
+            is_active=True,
+        )
+
+    def test_block_resolves_active_rule(self):
+        block = EngineRuleReferenceBlock()
+        context = block.get_context(
+            {"rule_id": "joe-pass-r-001", "show_anchor": True},
+        )
+        self.assertIsNotNone(context["token"])
+        self.assertEqual(context["token"]["payload"]["rule_id"], "joe-pass-r-001")
+        self.assertEqual(context["token"]["source"], "rule")
+
+    def test_block_falls_back_for_missing_rule(self):
+        block = EngineRuleReferenceBlock()
+        context = block.get_context(
+            {"rule_id": "nonexistent-rule", "show_anchor": True},
+        )
+        self.assertIsNone(context["token"])
+        self.assertEqual(context["unavailable_rule_id"], "nonexistent-rule")
+
+    def test_block_excludes_inactive_rule(self):
+        self.rule.is_active = False
+        self.rule.save(update_fields=["is_active"])
+        block = EngineRuleReferenceBlock()
+        context = block.get_context(
+            {"rule_id": "joe-pass-r-001", "show_anchor": True},
+        )
+        self.assertIsNone(context["token"])

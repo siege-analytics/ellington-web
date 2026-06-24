@@ -318,3 +318,22 @@ button.destructive, input[type="submit"].destructive {
 .badge--complete { background: var(--verdict-accept-bg); color: var(--verdict-accept); }
 .badge--partial { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
 .badge--failed { background: var(--verdict-reject-bg); color: var(--verdict-reject); }
+
+/* Engine rule reference card (#200) — used by the
+   engine_rule_reference StreamField block. Matches the rule_library
+   card shape so prose-embedded references and browse-page cards are
+   visually identical. */
+.rule-ref-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--bg-border);
+  border-left: 4px solid var(--chord-maj7);
+  border-radius: 0 4px 4px 0;
+  padding: 0.75em 1em;
+  margin: 1em 0;
+}
+.rule-ref-card header { margin-bottom: 0.3em; }
+.rule-ref-card .rule-ref-name { font-size: var(--text-base); }
+.rule-ref-card--unavailable {
+  border-left-color: var(--verdict-reject);
+  background: var(--verdict-reject-bg);
+}

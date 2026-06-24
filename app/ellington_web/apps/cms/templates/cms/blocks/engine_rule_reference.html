@@ -1,0 +1,49 @@
+{# Render of an engine_rule_reference StreamField block (#200).
+   Matches the rule_library card shape so editor-embedded cards and
+   browse-page cards are visually identical. Locked-contract token
+   fields per plugin #586. #}
+{% if token %}
+  <aside class="rule-ref-card" data-rule-id="{{ token.payload.rule_id }}">
+    <header>
+      <strong class="rule-ref-name">{{ token.payload.name }}</strong>
+      <span class="meta">
+        {{ token.payload.master_name }} · {{ token.payload.rule_id }}
+        · <span class="preference--{% if token.payload.polarity == 'avoid' %}weak-avoid{% elif token.payload.polarity == 'positive' %}weak-recommend{% else %}neutral{% endif %}">
+          preference {{ token.payload.preference }}
+        </span>
+      </span>
+    </header>
+
+    {% if token.payload.quality_binding %}
+      <p class="meta">
+        Binds:
+        {% for q in token.payload.quality_binding %}
+          <span class="chord--{{ q }}">{{ q }}</span>{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      </p>
+    {% endif %}
+
+    {% if show_anchor and token.payload.anchor %}
+      <blockquote class="anchor-quote">
+        {{ token.payload.anchor }}
+        {% if token.payload.source_page and token.payload.source_pdf_filename %}
+          <div class="meta">Page {{ token.payload.source_page }} of {{ token.payload.source_pdf_filename }}</div>
+        {% elif token.payload.source_page %}
+          <div class="meta">Page {{ token.payload.source_page }}</div>
+        {% endif %}
+      </blockquote>
+    {% endif %}
+
+    {% if token.payload.falsifier %}
+      <p class="meta"><em>Falsifier:</em> {{ token.payload.falsifier }}</p>
+    {% endif %}
+  </aside>
+{% else %}
+  <aside class="rule-ref-card rule-ref-card--unavailable">
+    <span class="meta">
+      Engine rule not found:
+      <code>{{ unavailable_rule_id|default:"(unspecified)" }}</code>.
+      The rule may have been deactivated since the page was authored.
+    </span>
+  </aside>
+{% endif %}

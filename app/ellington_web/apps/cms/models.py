@@ -20,6 +20,8 @@ from wagtail.fields import RichTextField, StreamField
 from wagtail.images.blocks import ImageChooserBlock
 from wagtail.models import Page
 
+from .blocks import EngineRuleReferenceBlock
+
 
 class HomePage(Page):
     """The site home page at ``/``.
@@ -95,6 +97,7 @@ class MasterProfilePage(Page):
             ])),
             ("image", ImageChooserBlock()),
             ("quote", blocks.BlockQuoteBlock()),
+            ("engine_rule_reference", EngineRuleReferenceBlock()),
         ],
         blank=True,
         use_json_field=True,
