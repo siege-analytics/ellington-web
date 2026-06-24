@@ -52,12 +52,13 @@ from django.conf import settings  # noqa: E402
 # Defaults that work for the existing surface:
 # - WhiteNoise serves hashed static, all from self
 # - Wagtail (#190) admin loads its own JS/CSS, all from self
-# - HTMX is loaded from unpkg.com in practice/base.html — allow that origin
+# - HTMX is vendored at static/js/htmx.min.js (#229) so no external
+#   script origins are needed
 # - Authentik may redirect us; same-origin form-action is fine
 # - No camera/mic/geo usage today; disable broadly
 DEFAULT_CSP = (
     "default-src 'self'; "
-    "script-src 'self' https://unpkg.com 'unsafe-inline'; "
+    "script-src 'self' 'unsafe-inline'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "font-src 'self' data:; "

@@ -55,6 +55,14 @@ class SecurityHeadersMiddlewareTests(TestCase):
         self.assertIn("script-src 'self'", response["Content-Security-Policy"])
         self.assertNotIn("unpkg.com", response["Content-Security-Policy"])
 
+    def test_default_csp_has_no_external_origins(self):
+        """#229 — after vendoring HTMX, no third-party origins should
+        remain in the default CSP."""
+        response = self._process()
+        csp = response["Content-Security-Policy"]
+        self.assertNotIn("unpkg.com", csp)
+        self.assertNotIn("https://", csp)
+
     @override_settings(SECURITY_HEADERS_CSP=None)
     def test_csp_disabled_when_none(self):
         response = self._process()
