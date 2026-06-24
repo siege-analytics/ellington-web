@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.practice",
     "apps.engine_rules",
     "apps.rule_review",
+    "apps.audio",
 ]
 
 MIDDLEWARE = [
