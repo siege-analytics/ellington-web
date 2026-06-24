@@ -18,6 +18,26 @@ v0.1 behavior:
   fires (#71) or from a future authoring layer.
 - ChordEvents with empty chord_symbol are skipped (placeholder rows).
 
+Augmented-facet inference (``scale.context``, ``harmonic.context``)
+intentionally stops at a stub per cross-agent ack 2026-06-24. The
+firing spec §3 is informal on inference algorithms ("MAY grow");
+plugin agent is authoring a §3.1 inference-algorithm appendix as the
+single source of truth. Until that lands:
+
+- ``scale.context`` stays None — corpus usage is 10 rules (8 Goodrick);
+  rules requiring a literal value won't fire, rules using ``"any"``
+  still fire normally. Acceptable cost for v0.1 shipping.
+- ``harmonic.context`` covers progression.position ∈ {I, vi, IIImaj,
+  V, ii, IV} → {tonic, dominant_function, subdominant_function}; the
+  passing/tension buckets stay None. Corpus usage is 188 rules
+  (Laukens 99, Harris 32, Pass 22, Roberts 26); the canonical-position
+  cases catch ~80%. Rule authors who need guaranteed firing should
+  write ``"any"`` for these dimensions in the rule's ``when`` block
+  rather than a literal value.
+
+When the §3.1 appendix lands the inference algorithm will be ported
+verbatim, likely extracted into ``apps/engine_rules/inference.py``.
+
 Caller is responsible for prefetching related sections / measures /
 chord_events to avoid N+1 queries. The typical usage:
 
