@@ -572,3 +572,66 @@ class LatestReleaseResolverTests(TestCase):
         with self._patch_urlopen(payload):
             with self.assertRaises(CommandError):
                 cmd._resolve_latest_release_tag()
+
+
+# ---------------------------------------------------------------------------
+# #218 — --dry-run flag
+# ---------------------------------------------------------------------------
+
+
+class TestSyncEngineRulesDryRun(TestCase):
+    """--dry-run loads + validates but skips DB writes."""
+
+    def setUp(self) -> None:
+        Master.objects.create(
+            slug="joe-pass", name="Joe Pass", is_placeholder=False,
+        )
+        self.bundle_bytes = _build_bundle()
+
+    def _call_dry(self, **kwargs) -> StringIO:
+        out = StringIO()
+        path = Path("/tmp/test-engine-rules-dry-run-bundle.tar.gz")
+        path.write_bytes(self.bundle_bytes)
+        call_command(
+            "sync_engine_rules",
+            "--bundle-path", str(path),
+            "--dry-run",
+            stdout=out,
+            **kwargs,
+        )
+        return out
+
+    def test_no_bundle_row_created(self):
+        self._call_dry()
+        self.assertEqual(EngineRulesBundle.objects.count(), 0)
+
+    def test_no_rule_row_created(self):
+        self._call_dry()
+        self.assertEqual(EngineRule.objects.count(), 0)
+
+    def test_output_labeled_dry_run(self):
+        out = self._call_dry()
+        text = out.getvalue()
+        self.assertIn("DRY RUN", text)
+        self.assertIn("would add", text)
+        self.assertIn("would deactivate", text)
+
+    def test_would_add_counts_new_rules(self):
+        out = self._call_dry()
+        text = out.getvalue()
+        # Fixture ships 1 rule; nothing in DB; would-add = 1
+        self.assertRegex(text, r"would add \(new keys\): 1")
+
+    def test_dry_run_after_real_sync_counts_zero_changes(self):
+        """If a real sync happened, a subsequent --dry-run sees the
+        same bundle and reports 0 add / 1 update / 0 deactivate."""
+        # First do a real sync
+        path = Path("/tmp/test-engine-rules-real-bundle.tar.gz")
+        path.write_bytes(self.bundle_bytes)
+        call_command("sync_engine_rules", "--bundle-path", str(path))
+        # Now dry-run the same bundle
+        out = self._call_dry()
+        text = out.getvalue()
+        self.assertRegex(text, r"would add \(new keys\): 0")
+        self.assertRegex(text, r"would update \(existing keys\): 1")
+        self.assertRegex(text, r"would deactivate \(missing keys\): 0")

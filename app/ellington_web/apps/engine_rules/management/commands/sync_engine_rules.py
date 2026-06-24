@@ -152,6 +152,16 @@ class Command(BaseCommand):
                 " has legitimately shrunk (e.g. a re-organization)."
             ),
         )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help=(
+                "Load + validate + plan but DO NOT write to the DB."
+                " Prints the upsert plan (added / would-update /"
+                " would-deactivate counts). Useful for previewing a"
+                " sync before committing. (#218)"
+            ),
+        )
 
     def handle(self, *args, **options) -> None:
         release_tag = options.get("release_tag") or getattr(
@@ -175,6 +185,8 @@ class Command(BaseCommand):
                 " --bundle-path, or set settings.ENGINE_RULES_RELEASE_TAG"
             )
 
+        dry_run = options.get("dry_run", False)
+
         with _open_bundle(bundle_path, release_tag) as (tar, manifest_dict):
             # manifest_dict is non-None when the release pipeline ships
             # manifest.json as a separate asset (v0.3+); fall back to
@@ -182,6 +194,10 @@ class Command(BaseCommand):
             manifest = manifest_dict if manifest_dict is not None else _load_manifest(tar)
             self._validate_manifest(manifest)
             rules_by_path = _load_rules_files(tar)
+
+        if dry_run:
+            self._print_dry_run_plan(manifest, rules_by_path)
+            return
 
         bundle = self._upsert_bundle(manifest)
         prior_active_pks = set(
@@ -208,6 +224,65 @@ class Command(BaseCommand):
         )
 
     # ---- validation -----------------------------------------------------
+
+    def _print_dry_run_plan(
+        self, manifest: dict[str, Any], rules_by_path: dict[str, list[dict]],
+    ) -> None:
+        """Emit a clearly-labeled DRY RUN summary. #218.
+
+        Counts what a real sync would do without touching the DB:
+        - bundle metadata that would be created
+        - per-file rule counts that would be upserted
+        - currently-active rules that would be deactivated (rule_id
+          present in DB but not in the new bundle)
+        """
+        bundle_version = manifest.get("bundle_version", "?")
+        plugin_sha = (manifest.get("plugin_commit_sha") or "?")[:8]
+
+        new_keys: set[tuple[str, str, str]] = set()
+        new_rule_count = 0
+        for rules in rules_by_path.values():
+            for rule in rules:
+                new_rule_count += 1
+                new_keys.add((
+                    rule.get("master_id", ""),
+                    rule.get("work_id", ""),
+                    rule.get("rule_id", ""),
+                ))
+
+        prior_active = EngineRule.objects.filter(
+            is_active=True,
+        ).values_list("master__slug", "work_id", "rule_id")
+        prior_active_keys = set(prior_active)
+
+        would_deactivate = len(prior_active_keys - new_keys)
+        would_add_new = len(new_keys - prior_active_keys)
+        would_update = len(new_keys & prior_active_keys)
+
+        self.stdout.write(self.style.WARNING(
+            "==== DRY RUN — no DB writes ===="
+        ))
+        self.stdout.write(
+            f"  bundle: {bundle_version} ({plugin_sha})"
+        )
+        self.stdout.write(
+            f"  files in bundle: {len(rules_by_path)}"
+        )
+        self.stdout.write(
+            f"  rules in bundle: {new_rule_count}"
+        )
+        self.stdout.write(
+            f"  would add (new keys): {would_add_new}"
+        )
+        self.stdout.write(
+            f"  would update (existing keys): {would_update}"
+        )
+        self.stdout.write(
+            f"  would deactivate (missing keys): {would_deactivate}"
+        )
+        self.stdout.write(self.style.WARNING(
+            "==== END DRY RUN ===="
+        ))
 
     def _resolve_latest_release_tag(self) -> str:
         """Return the highest-semver ``engine-rules-v*`` tag from
