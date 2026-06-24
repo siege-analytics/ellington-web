@@ -17,7 +17,6 @@ app = Celery('ellington_web')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
 # Load task modules from all registered Django apps.
-# All GADM tasks (SedonaDB, pipelined, optimized) are consolidated in locations/tasks.py
 app.autodiscover_tasks()
 
 
