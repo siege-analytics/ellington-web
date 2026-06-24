@@ -331,11 +331,18 @@ class Command(BaseCommand):
             if not shapefile_path.exists():
                 raise FileNotFoundError(f"Shapefile not found: {shapefile_name}")
             
-            # Load into database
-            from locations.models.census.tiger import *
-            
-            model = globals()[config['model']]
-            mapping_dict = globals()[config['mapping']]
+            # Load into database. GST scaffold used
+            # ``from locations.models.census.tiger import *`` here and
+            # resolved config['model']/config['mapping'] through
+            # globals() — a SyntaxError under Python 3.10+ (import *
+            # is module-level-only). Same class-of-bug as #154 in
+            # locations/tasks.py. Explicit module reference + getattr
+            # preserves the dynamic config-driven dispatch without
+            # star-importing into the function namespace.
+            from locations.models.census import tiger as _tiger_models
+
+            model = getattr(_tiger_models, config['model'])
+            mapping_dict = getattr(_tiger_models, config['mapping'])
             
             lm = LayerMapping(
                 model,
