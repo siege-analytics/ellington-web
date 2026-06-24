@@ -264,3 +264,12 @@ WAGTAILSEARCH_BACKENDS = {
 # Wagtail-managed permitted file extensions for the documents app.
 # Spike-conservative; expanded as needs land.
 WAGTAILDOCS_EXTENSIONS = ["csv", "docx", "pdf", "txt"]
+
+# Pedagogue editable subtrees (#205). Root-level page slugs the
+# Pedagogue Wagtail group may add/change/publish under. Slugs not
+# matching an existing page are skipped at migration time — when the
+# subtree later lands, rerun ``manage.py migrate cms`` (or the Phase
+# 2.1 signal handler, once it ships) to apply the perm.
+# Pedagogues retain ``access_admin`` regardless so they can log into
+# /cms/ even before any subtree exists.
+PEDAGOGUE_AUTHORABLE_PAGE_SLUGS = ["masters", "journeys", "rules"]

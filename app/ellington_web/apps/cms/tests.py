@@ -141,3 +141,56 @@ class PedagogueGroupSyncTests(TestCase):
 
         after = set(user.groups.values_list("name", flat=True))
         self.assertEqual(before, after)
+
+
+# ---------------------------------------------------------------------------
+# #205 — pedagogue subtree restriction
+# ---------------------------------------------------------------------------
+
+
+class PedagogueSubtreeRestrictionTests(TestCase):
+    """Post-migration the Pedagogue group has subtree-only perms.
+
+    The wagtail_create_homepage initial migration creates a root and
+    a HomePage at depth=2 (slug='home' by default). Our 0002 grants
+    root-level GroupPagePermission; 0003 removes that and re-grants
+    per-slug. After both migrations have run, the group should NOT
+    have any GroupPagePermission on the root page.
+    """
+
+    def test_root_level_permission_removed(self):
+        try:
+            from wagtail.models import GroupPagePermission, Page
+        except ImportError:
+            self.skipTest("wagtail not installed")
+
+        group = Group.objects.filter(name=PEDAGOGUE_GROUP_NAME).first()
+        if group is None:
+            self.skipTest("Pedagogue group not seeded (migration 0002 skipped)")
+
+        root = Page.objects.filter(pk=1).first()
+        if root is None:
+            self.skipTest("Wagtail root page not present")
+
+        self.assertEqual(
+            GroupPagePermission.objects.filter(group=group, page=root).count(),
+            0,
+            "0003 should have removed root-level GroupPagePermission.",
+        )
+
+    def test_access_admin_permission_preserved(self):
+        """Pedagogue can still log into /cms/ even with no subtrees."""
+        from django.contrib.auth.models import Permission
+
+        group = Group.objects.filter(name=PEDAGOGUE_GROUP_NAME).first()
+        if group is None:
+            self.skipTest("Pedagogue group not seeded")
+
+        access_admin = Permission.objects.filter(
+            content_type__app_label="wagtailadmin",
+            codename="access_admin",
+        ).first()
+        if access_admin is None:
+            self.skipTest("access_admin permission not installed")
+
+        self.assertIn(access_admin, group.permissions.all())
