@@ -347,15 +347,22 @@ def _open_bundle(
 ) -> Iterator[tuple[tarfile.TarFile, dict[str, Any] | None]]:
     """Yield ``(tarfile, manifest_dict_or_None)`` for the bundle.
 
+    The plugin's v0.3+ release pipeline (``scripts/build_engine_rules_bundle.py``
+    + ``.github/workflows/engine-rules-release.yml``) ships ``manifest.json``
+    as a separate release asset alongside the tarball. This is the
+    canonical contract going forward — manifest is downloadable +
+    schema-validatable without decompressing the bundle, so consumers
+    can inspect metadata before deciding to ingest. Confirmed by the
+    plugin agent on 2026-06-23 after ellington-web#159 surfaced the gap.
+
     Offline / fixture path (``--bundle-path``): yield ``(tar, None)`` —
     caller falls back to ``_load_manifest(tar)`` for the manifest-inside-
-    tarball layout.
+    tarball layout. Preserves compatibility with pre-v0.3 bundles and
+    with the synthetic in-memory bundles built by ``tests_sync.py``.
 
     Release-tag path: fetch the bundle tarball AND the separate
-    ``manifest.json`` release asset from the same release, parse the
-    manifest, yield ``(tar, manifest_dict)``. Plugin release pipeline
-    ships them as separate assets starting from v0.3 — see
-    ellington-web#159.
+    ``manifest.json`` release asset from the same release tag, parse
+    the manifest, yield ``(tar, manifest_dict)``.
     """
     if bundle_path:
         with tarfile.open(bundle_path, "r:gz") as tar:
