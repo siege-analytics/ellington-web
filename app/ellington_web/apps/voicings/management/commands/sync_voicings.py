@@ -76,6 +76,16 @@ class Command(BaseCommand):
             help="ISO-8601 timestamp. Defaults to file mtime (local"
             " mode) or now() (URL mode).",
         )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help=(
+                "Load + validate but DO NOT write to the DB. Prints"
+                " what would be imported (count, distinct qualities,"
+                " distinct categories). Useful for previewing a"
+                " voicings.json import before committing. (#220)"
+            ),
+        )
 
     def handle(self, *args, **options) -> None:
         local_path = options.get("local_path")
@@ -104,6 +114,10 @@ class Command(BaseCommand):
         voicings = payload["voicings"]
         if not isinstance(voicings, list) or not voicings:
             raise CommandError("voicings array empty or not a list.")
+
+        if options.get("dry_run", False):
+            self._print_dry_run(voicings)
+            return
 
         if not plugin_sha:
             # Stub: defers plugin SHA derivation. Cost: bundle SHA falls
@@ -195,6 +209,47 @@ class Command(BaseCommand):
                 f"voicings active."
             )
         )
+
+    # ---------------------------------------------------------------
+    # Dry-run reporter (#220)
+    # ---------------------------------------------------------------
+
+    def _print_dry_run(self, voicings: list[dict]) -> None:
+        """Emit a DRY RUN summary — count + distinct qualities + categories.
+
+        Mirror of sync_engine_rules' --dry-run (#218) shape so the two
+        commands feel consistent to ops.
+        """
+        qualities: dict[str, int] = {}
+        categories: dict[str, int] = {}
+        for v in voicings:
+            q = v.get("chord_quality", "?")
+            c = v.get("category", "?")
+            qualities[q] = qualities.get(q, 0) + 1
+            categories[c] = categories.get(c, 0) + 1
+
+        self.stdout.write(self.style.WARNING(
+            "==== DRY RUN — no DB writes ===="
+        ))
+        self.stdout.write(f"  voicings in payload: {len(voicings)}")
+        self.stdout.write(
+            f"  distinct qualities: {len(qualities)}"
+        )
+        self.stdout.write(
+            f"  distinct categories: {len(categories)}"
+        )
+        # Top-5 of each so operator spots schema shifts at a glance
+        top_q = sorted(qualities.items(), key=lambda kv: -kv[1])[:5]
+        top_c = sorted(categories.items(), key=lambda kv: -kv[1])[:5]
+        self.stdout.write(
+            "  top qualities: " + ", ".join(f"{q}={n}" for q, n in top_q)
+        )
+        self.stdout.write(
+            "  top categories: " + ", ".join(f"{c}={n}" for c, n in top_c)
+        )
+        self.stdout.write(self.style.WARNING(
+            "==== END DRY RUN ===="
+        ))
 
     # ---------------------------------------------------------------
     # I/O helpers

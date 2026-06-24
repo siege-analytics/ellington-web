@@ -363,3 +363,75 @@ class SyncVoicingsCommandTests(TestCase):
         )
         v = Voicing.objects.get(voicing_id="exotic-1")
         self.assertEqual(v.chord_quality, "dom13#11b9")
+
+
+# ---------------------------------------------------------------------------
+# #220 — sync_voicings --dry-run
+# ---------------------------------------------------------------------------
+
+
+class SyncVoicingsDryRunTests(TestCase):
+    """--dry-run loads + reports but skips DB writes."""
+
+    FIXTURE = {
+        "voicings": [
+            {
+                "id": "v1", "name": "v1",
+                "chord_quality": "maj7", "root": "C", "category": "shell",
+                "suitableModes": ["comping"], "strings": 6,
+                "fret_number": 3, "visible_frets": 4,
+                "dots": [{"string": 6, "fret": 1}],
+                "mutes": [], "open": [], "notes": ["C"], "intervals": ["1"],
+                "tags": [], "also_qualities": [],
+            },
+            {
+                "id": "v2", "name": "v2",
+                "chord_quality": "maj7", "root": "C", "category": "drop2",
+                "suitableModes": ["comping"], "strings": 6,
+                "fret_number": 5, "visible_frets": 4,
+                "dots": [{"string": 4, "fret": 1}],
+                "mutes": [], "open": [], "notes": ["C"], "intervals": ["1"],
+                "tags": [], "also_qualities": [],
+            },
+            {
+                "id": "v3", "name": "v3",
+                "chord_quality": "dom7", "root": "C", "category": "shell",
+                "suitableModes": ["chord-melody"], "strings": 6,
+                "fret_number": 3, "visible_frets": 4,
+                "dots": [{"string": 6, "fret": 1}],
+                "mutes": [], "open": [], "notes": ["C"], "intervals": ["1"],
+                "tags": [], "also_qualities": [],
+            },
+        ],
+    }
+
+    def _write_fixture(self):
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False,
+        )
+        json.dump(self.FIXTURE, tmp)
+        tmp.close()
+        return tmp.name
+
+    def test_no_bundle_created(self):
+        path = self._write_fixture()
+        call_command("sync_voicings", local_path=path, dry_run=True)
+        self.assertEqual(VoicingBundle.objects.count(), 0)
+
+    def test_no_voicing_created(self):
+        path = self._write_fixture()
+        call_command("sync_voicings", local_path=path, dry_run=True)
+        self.assertEqual(Voicing.objects.count(), 0)
+
+    def test_output_labeled_dry_run(self):
+        from io import StringIO
+        out = StringIO()
+        path = self._write_fixture()
+        call_command(
+            "sync_voicings", local_path=path, dry_run=True, stdout=out,
+        )
+        text = out.getvalue()
+        self.assertIn("DRY RUN", text)
+        self.assertIn("voicings in payload: 3", text)
+        self.assertIn("distinct qualities: 2", text)
+        self.assertIn("distinct categories: 2", text)
