@@ -1,4 +1,4 @@
-"""Minimal URLconf for tests — main urls.py pulls in grappelli/locations/etc."""
+"""Minimal URLconf for tests — main urls.py pulls in grappelli/admin/etc."""
 
 from django.urls import include, path
 
