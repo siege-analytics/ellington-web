@@ -1,0 +1,92 @@
+# ellington-web-worker — Celery worker image for OMR (omr-leadsheet) and
+# future audio-analysis (#86) queues. Bundles the system binaries those
+# pipelines shell out to: Audiveris (OMR engine), MuseScore (.mscz CLI),
+# Tesseract (chord-text OCR), Poppler/ImageMagick (PDF page rendering).
+#
+# Inherits from the freshly-built ellington-web image so all of Django,
+# the Python venv, GDAL/PostGIS deps, and requirements.txt are already
+# in place. Only the OMR-specific binaries are added here. See #89 for
+# the full rationale (web vs worker split; ~5x image-size impact).
+
+ARG WORKER_BASE_IMAGE=localhost:32000/ellington-web:develop
+FROM ${WORKER_BASE_IMAGE}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Java runtime for Audiveris (it ships as a Java application). The .deb
+# in the next layer pulls openjdk in as a dep, but install it
+# explicitly so we control the version (17, matching Audiveris 5.10.x).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-17-jre-headless \
+        libfreetype6 \
+        libfontconfig1 \
+        fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
+# Audiveris — OMR engine consumed by omr-leadsheet (#81). The Ubuntu
+# 24.04 .deb matches the ellington-web base (UBUNTU_BASE_IMAGE in
+# docker-bake.hcl). Bump AUDIVERIS_VERSION when a newer release is
+# tagged at github.com/Audiveris/audiveris and re-build.
+ARG AUDIVERIS_VERSION=5.10.2
+ADD https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu24.04-x86_64.deb \
+    /tmp/audiveris.deb
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/audiveris.deb \
+    && rm /tmp/audiveris.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# MuseScore Studio — needed for .mscz CLI round-trips (#73). Distributed
+# as an AppImage only; we extract it (no FUSE in containers) and symlink
+# the AppRun entrypoint to a stable name omr-leadsheet shells out to.
+ARG MUSESCORE_VERSION=4.7.3
+ARG MUSESCORE_BUILD=260608135
+ADD https://github.com/musescore/MuseScore/releases/download/v${MUSESCORE_VERSION}/MuseScore-Studio-${MUSESCORE_VERSION}.${MUSESCORE_BUILD}-x86_64.AppImage \
+    /tmp/mscore.AppImage
+RUN chmod +x /tmp/mscore.AppImage \
+    && cd /opt && /tmp/mscore.AppImage --appimage-extract \
+    && mv squashfs-root mscore \
+    && ln -s /opt/mscore/AppRun /usr/local/bin/mscore4portable \
+    && rm /tmp/mscore.AppImage
+
+# OCR + PDF + image processing. omr-leadsheet uses pdftoppm to render
+# PDF pages to PNG before feeding them to Audiveris; tesseract is used
+# for chord-symbol text fallback when Audiveris can't read the figure.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        poppler-utils \
+        imagemagick \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build deps for native-extension Python packages. madmom (#86 chord
+# detection) requires Cython + numpy headers at install time. Installing
+# the apt build-essential + python3-dev + the two Python deps now so
+# adding `madmom` to requirements.txt in a future PR doesn't need a
+# parallel Dockerfile bump.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        python3-dev \
+        cython3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir numpy cython
+
+# Bundle Dheeraj's lead-sheet style so omr-leadsheet's mscore --style
+# pass renders consistent output. The .mss is XML stylesheet data (no
+# copyrightable content); safe in the public repo.
+COPY docker/styles/Siege_Jazz_Style.mss /opt/ellington/styles/Siege_Jazz_Style.mss
+
+# Default ELLINGTON_OMR_* env — operator overrides via the worker
+# Deployment's env. Settings hooks were added in apps/charts/omr.py (#81).
+ENV ELLINGTON_OMR_AUDIVERIS_BIN=/usr/bin/Audiveris \
+    ELLINGTON_OMR_MSCORE_BIN=/usr/local/bin/mscore4portable \
+    ELLINGTON_OMR_STYLE_FILE=/opt/ellington/styles/Siege_Jazz_Style.mss \
+    ELLINGTON_OMR_VLM_ENABLED=0 \
+    ELLINGTON_OMR_VLM_BACKEND=ollama \
+    ELLINGTON_OMR_VLM_MODEL=qwen2.5vl:7b
+
+# Default to the omr-leadsheet queue; manifests override with -Q on
+# higher-throughput pods. The web image's ENTRYPOINT (entrypoint.sh)
+# still runs migrations + collectstatic before exec'ing this CMD,
+# but a worker pod typically wants those skipped — the manifests-side
+# worker Deployment sets an env flag the entrypoint honors.
+CMD ["celery", "-A", "ellington_web", "worker", "-Q", "omr-leadsheet,celery", "-c", "1", "--loglevel=info"]
