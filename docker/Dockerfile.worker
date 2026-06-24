@@ -30,7 +30,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG AUDIVERIS_VERSION=5.10.2
 ADD https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu24.04-x86_64.deb \
     /tmp/audiveris.deb
-RUN apt-get update \
+# The Audiveris .deb's postinst runs `xdg-desktop-menu install` to
+# register a GUI launcher. In a headless container the system menu
+# dirs don't exist (xdg returns "No writable system menu directory
+# found" → exit 3 → dpkg --configure fails → apt-get install fails).
+# Pre-create the dirs so the postinst's xdg call succeeds silently;
+# we don't actually use the desktop entries, but the postinst short-
+# circuits cleanly when its target dirs exist. See ellington-web#89
+# Tekton build ellington-web-build-sssg2 for the original failure.
+RUN mkdir -p /usr/share/applications /usr/share/desktop-directories /usr/share/menu \
+    && apt-get update \
     && apt-get install -y --no-install-recommends /tmp/audiveris.deb \
     && rm /tmp/audiveris.deb \
     && rm -rf /var/lib/apt/lists/*
