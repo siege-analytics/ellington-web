@@ -39,3 +39,79 @@ class CurrentUserMiddleware:
 def get_current_user() -> Optional[object]:
     """Return the request user stashed by CurrentUserMiddleware, or None."""
     return getattr(_thread_local, "current_user", None)
+
+
+# ---------------------------------------------------------------------------
+# Security headers middleware (#227)
+# ---------------------------------------------------------------------------
+
+
+from django.conf import settings  # noqa: E402
+
+
+# Defaults that work for the existing surface:
+# - WhiteNoise serves hashed static, all from self
+# - Wagtail (#190) admin loads its own JS/CSS, all from self
+# - HTMX is loaded from unpkg.com in practice/base.html — allow that origin
+# - Authentik may redirect us; same-origin form-action is fine
+# - No camera/mic/geo usage today; disable broadly
+DEFAULT_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://unpkg.com 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'self'; "
+    "form-action 'self'; "
+    "base-uri 'self'"
+)
+
+DEFAULT_PERMISSIONS_POLICY = (
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+)
+
+DEFAULT_REFERRER_POLICY = "strict-origin-when-cross-origin"
+
+
+class SecurityHeadersMiddleware:
+    """Set baseline security headers per #227.
+
+    Each header is settings-driven so an environment can override:
+    - SECURITY_HEADERS_CSP
+    - SECURITY_HEADERS_PERMISSIONS_POLICY
+    - SECURITY_HEADERS_REFERRER_POLICY
+
+    Setting a value to None or empty string disables that header.
+
+    Headers are added on the response; existing values (Django's
+    own X-Frame-Options, etc.) are preserved.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        csp = getattr(settings, "SECURITY_HEADERS_CSP", DEFAULT_CSP)
+        if csp and "Content-Security-Policy" not in response:
+            response["Content-Security-Policy"] = csp
+        pp = getattr(
+            settings, "SECURITY_HEADERS_PERMISSIONS_POLICY",
+            DEFAULT_PERMISSIONS_POLICY,
+        )
+        if pp and "Permissions-Policy" not in response:
+            response["Permissions-Policy"] = pp
+        rp = getattr(
+            settings, "SECURITY_HEADERS_REFERRER_POLICY",
+            DEFAULT_REFERRER_POLICY,
+        )
+        if rp and "Referrer-Policy" not in response:
+            response["Referrer-Policy"] = rp
+        # X-Content-Type-Options is set by Django's SecurityMiddleware
+        # when SECURE_CONTENT_TYPE_NOSNIFF=True; setting it here would
+        # double up. We add it only as a defensive belt if the upstream
+        # middleware skipped it.
+        if "X-Content-Type-Options" not in response:
+            response["X-Content-Type-Options"] = "nosniff"
+        return response

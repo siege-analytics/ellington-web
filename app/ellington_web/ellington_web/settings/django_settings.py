@@ -70,7 +70,16 @@ MIDDLEWARE = [
     'apps.core.middleware.CurrentUserMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Baseline security headers (#227): CSP, Permissions-Policy,
+    # Referrer-Policy, X-Content-Type-Options. Late in the chain so
+    # response is fully assembled before we annotate.
+    'apps.core.middleware.SecurityHeadersMiddleware',
 ]
+
+# Security headers (#227) — override per-env in deployment.
+# Setting any to None or "" disables that header.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
 
 AUTHENTICATION_BACKENDS = [
     "apps.core.auth.backends.AuthentikRemoteUserBackend",
