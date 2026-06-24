@@ -31,13 +31,9 @@
     form input[type="text"], form select, form textarea {
       width: 100%; padding: 0.4em; border: 1px solid #aaa; border-radius: 3px; font: inherit;
     }
-    .badge {
-      display: inline-block; padding: 0.15em 0.6em;
-      border-radius: 10px; font-size: 0.85em; font-weight: bold;
-    }
-    .badge--accept { background: #efe; color: #060; }
-    .badge--close_but { background: #fea; color: #850; }
-    .badge--reject { background: #fee; color: #900; }
+    /* .badge + .badge--{accept,close_but,reject} live in brand.css
+       (#151) so other apps can reuse the verdict palette without
+       duplicating the rule. */
     .rule-card {
       background: var(--bg-elev); border: 1px solid var(--bg-border);
       border-radius: 4px; padding: 1em; margin-bottom: 1em;
