@@ -1493,9 +1493,26 @@ def fetch_census_unit_task(self, unit_type, year, state_fips=None, skip_download
         
         # Run management command (synchronous within this task)
         call_command('fetch_census_data', *cmd_args)
-        
-        # Get model count
-        from locations.models.census.tiger import *
+
+        # Get model count. The original GST scaffold used
+        # ``from locations.models.census.tiger import *`` here, which is
+        # a SyntaxError under Python 3.10+ (import * is only allowed at
+        # module level — caught when Celery autodiscover_tasks tried to
+        # import this module from the worker pod, see ellington-web#154).
+        # Explicit imports are equivalent and don't pollute the function
+        # namespace.
+        from locations.models.census.tiger import (
+            United_States_Census_State,
+            United_States_Census_County,
+            United_States_Census_Congressional_District,
+            United_States_Census_State_Legislative_District_Upper,
+            United_States_Census_State_Legislative_District_Lower,
+            United_States_Census_Tract,
+            United_States_Census_Block_Group,
+            United_States_Census_Voter_Tabulation_District,
+            United_States_Census_Place,
+            United_States_Census_ZCTA,
+        )
         model_mapping = {
             'state': United_States_Census_State,
             'county': United_States_Census_County,
