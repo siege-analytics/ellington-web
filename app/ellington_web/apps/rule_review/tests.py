@@ -382,3 +382,101 @@ class CommentThreadTests(TestCase):
         )
         reply = RuleComment.objects.get(body="reply")
         self.assertEqual(reply.parent, parent)
+
+
+class RuleLibraryViewTests(TestCase):
+    """rule_library renders the locked formatter contract field set (#175)."""
+
+    def setUp(self):
+        self.bundle = _make_bundle()
+        self.joe = Master.objects.create(slug="joe-pass", name="Joe Pass")
+        self.ted = Master.objects.create(slug="ted-greene", name="Ted Greene")
+        self.user = User.objects.create_user(
+            username="general1", password=secrets.token_urlsafe(16),
+        )
+        self.rule_joe = _make_rule(
+            self.bundle, self.joe,
+            rule_id="joe-1",
+            name="Voice the third on top for warmth",
+            anchor="Always voice the major third on top.",
+            source_page=42,
+            applicability_reasons=["chord-melody", "warm-tone"],
+            preference=2,
+        )
+        self.rule_ted = _make_rule(
+            self.bundle, self.ted,
+            rule_id="ted-1",
+            name="Avoid root-position triads on downbeats",
+            preference=-2,
+            falsifier="A rule that fires across all four beats.",
+        )
+
+    def test_login_required(self):
+        url = reverse("rule_review:rule_library")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("login", response["Location"])
+
+    def test_renders_grouped_by_master(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("rule_review:rule_library"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Joe Pass")
+        self.assertContains(response, "Ted Greene")
+        # Each rule's name renders
+        self.assertContains(response, "Voice the third on top for warmth")
+        self.assertContains(response, "Avoid root-position triads on downbeats")
+        # Anchor + source-locator render
+        self.assertContains(response, "Always voice the major third on top.")
+        self.assertContains(response, "Page 42")
+        # Applicability_reasons render as pills
+        self.assertContains(response, "chord-melody")
+        self.assertContains(response, "warm-tone")
+        # Falsifier section present for the Ted rule
+        self.assertContains(response, "fires across all four beats")
+        # Preference Likert pill renders
+        self.assertContains(response, '+2 recommend')
+        self.assertContains(response, '-2 strong avoid')
+
+    def test_master_filter_narrows(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("rule_review:rule_library") + "?master=joe-pass"
+        )
+        self.assertContains(response, "Joe Pass")
+        self.assertNotContains(response, "Avoid root-position")
+
+    def test_q_search_matches_anchor(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("rule_review:rule_library") + "?q=major third"
+        )
+        self.assertContains(response, "Voice the third on top")
+        self.assertNotContains(response, "Avoid root-position triads")
+
+    def test_q_search_no_match_renders_empty_state(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("rule_review:rule_library") + "?q=xyzzy-does-not-exist"
+        )
+        self.assertContains(response, "No rules match")
+
+    def test_token_shape_in_context(self):
+        """Sanity-check the structured token dict mirrors the locked contract."""
+        from apps.rule_review.views import _rule_to_token
+
+        token = _rule_to_token(self.rule_joe)
+        self.assertEqual(token["source"], "rule")
+        self.assertEqual(token["id"], self.rule_joe.pk)
+        payload = token["payload"]
+        # Required v1 + v2 fields per ellington-web#167 spec
+        for field in (
+            "rule_id", "master_id", "work_id", "name", "anchor",
+            "source_page", "chapter_n", "section_title", "preference",
+            "polarity", "quality_binding", "applicability_reasons",
+            "falsifier",
+        ):
+            self.assertIn(field, payload, f"missing contract field {field!r}")
+        self.assertEqual(payload["rule_id"], "joe-1")
+        self.assertEqual(payload["master_id"], "joe-pass")
+        self.assertIsNone(payload["chapter_n"])  # v2-reserved, model doesn't carry yet

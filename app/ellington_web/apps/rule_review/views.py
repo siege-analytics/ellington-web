@@ -10,6 +10,9 @@ Permission shape:
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from itertools import groupby
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
@@ -296,3 +299,113 @@ def edit_rule_comment(
     comment.edited_at = timezone.now()
     comment.save(update_fields=["body", "edited_at"])
     return redirect("rule_review:rule_detail", pk=comment.rule_id)
+
+
+# ---------------------------------------------------------------------------
+# Rule library — read-only browse mirroring the locked formatter contract.
+# Engine agent shipped the contract in musescore4-chord-library-plugin
+# `ExplanationFormatter.js::_formatRule(rule)` per #586; ellington-web#167
+# bookmarks the canonical reference. This view is the live Django consumer.
+# ---------------------------------------------------------------------------
+
+
+def _rule_to_token(rule: EngineRule) -> dict:
+    """Render an EngineRule into the locked formatter token shape.
+
+    Mirrors the plugin agent's ``_formatRule(rule)`` output exactly so the
+    field set is identical across plugin (QML) and ellington (Django
+    template) renders. Fields the model doesn't yet carry
+    (``chapter_n`` / ``section_title``) are reserved-for-v2; templates
+    treat ``None`` as absent.
+    """
+    return {
+        "source": "rule",
+        "id": rule.pk,
+        "payload": {
+            "rule_id": rule.rule_id,
+            "master_id": rule.master.slug if rule.master_id else None,
+            "master_name": rule.master.name if rule.master_id else "(unassigned)",
+            "work_id": rule.work_id,
+            "name": rule.name,
+            "anchor": rule.anchor or None,
+            "source_page": rule.source_page,
+            # Ellington-only enrichment; not in v1 contract — engine #550
+            # may add a source_locator sub-object in v2.
+            "source_pdf_filename": rule.source_pdf_filename or None,
+            # Reserved-for-v2 contract fields not yet on the model
+            "chapter_n": None,
+            "section_title": None,
+            "preference": rule.preference,
+            "polarity": rule.polarity,
+            "quality_binding": list(rule.quality_binding or []),
+            "applicability_reasons": list(rule.applicability_reasons or []),
+            "falsifier": rule.falsifier or None,
+        },
+    }
+
+
+@login_required
+def rule_library(request: HttpRequest) -> HttpResponse:
+    """Read-only browse of the active engine_rules corpus.
+
+    Groups by master, then by work_id within master, then ordered by
+    rule_id. Supports ``?master=<slug>`` to filter to a single master
+    and ``?q=<term>`` to substring-match on name / anchor / falsifier.
+
+    The verdict-collection workflow lives at ``rule_list`` /
+    ``rule_detail`` — the library exists alongside it as the corpus-
+    facing surface.
+    """
+    qs = (
+        EngineRule.objects.filter(is_active=True)
+        .select_related("master", "bundle")
+        .order_by("master__slug", "work_id", "rule_id")
+    )
+
+    master_slug = (request.GET.get("master") or "").strip()
+    if master_slug:
+        qs = qs.filter(master__slug=master_slug)
+
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        qs = qs.filter(
+            Q(name__icontains=q)
+            | Q(anchor__icontains=q)
+            | Q(falsifier__icontains=q)
+        )
+
+    rules = list(qs)
+    total_rules = len(rules)
+
+    # Group by master, then by work_id. OrderedDict so the template
+    # iterates in the qs's order (master__slug ASC) without further sort.
+    masters: "OrderedDict[str, dict]" = OrderedDict()
+    for master_key, master_rules in groupby(
+        rules, key=lambda r: r.master.slug if r.master_id else "__unassigned__"
+    ):
+        master_rules = list(master_rules)
+        first = master_rules[0]
+        works: "OrderedDict[str, list]" = OrderedDict()
+        for work_id, work_rules in groupby(master_rules, key=lambda r: r.work_id):
+            works[work_id] = [_rule_to_token(r) for r in work_rules]
+        masters[master_key] = {
+            "slug": master_key,
+            "name": (
+                first.master.name if first.master_id else "(unassigned)"
+            ),
+            "count": len(master_rules),
+            "works": works,
+        }
+
+    # When a master filter is active, default the <details> open for the
+    # match; otherwise collapse all to keep the page lean across 11+
+    # masters / 768 rules.
+    default_open = bool(master_slug or q)
+
+    return render(request, "rule_review/rule_library.html", {
+        "masters": masters,
+        "total_rules": total_rules,
+        "filter_master": master_slug,
+        "filter_q": q,
+        "default_open": default_open,
+    })
