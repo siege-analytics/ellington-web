@@ -77,6 +77,18 @@
   --preference-weak-avoid: var(--chord-min7b5);        /* -1 */
   --preference-strong-avoid: var(--chord-dim7);        /* -2 */
 
+  /* Rule-review verdict badges (#98 / #151). Aligned with the
+     preference Likert above so a reader's color memory transfers
+     across the two surfaces. Background variants are a desaturated
+     tint of the foreground hue — WCAG-AA contrast against bg-elev
+     in both light and dark modes. */
+  --verdict-accept: #4d6b1f;        /* deep moss — recommend */
+  --verdict-accept-bg: #e6efd6;     /* pale moss tint */
+  --verdict-close-but: #8a5a14;     /* burnt amber — unsure */
+  --verdict-close-but-bg: #faecc7;  /* pale amber tint */
+  --verdict-reject: var(--chord-dim7); /* oxblood — avoid */
+  --verdict-reject-bg: #f4dada;     /* pale oxblood tint */
+
   /* Typography */
   --font-display: "MuseJazz Text", "Bradley Hand", "Comic Sans MS", cursive, serif;
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -91,6 +103,12 @@
   --fg-muted: #a89d84;
   /* Chord-quality palette stays the same — colors are calibrated to
      pass WCAG-AA against both backgrounds. */
+
+  /* Verdict bg tints darken into the dark surface family; fg hues
+     stay constant so reader-memory transfers between light/dark. */
+  --verdict-accept-bg: #2a3818;
+  --verdict-close-but-bg: #3d2e10;
+  --verdict-reject-bg: #3a1a1a;
 }
 
 body {
@@ -130,3 +148,17 @@ body {
 .preference--strong-avoid { color: var(--preference-strong-avoid); }
 
 a { color: var(--link); }
+
+/* Verdict badges — used by rule_review (#98, #151) but shaped to be
+   reusable from any app that needs a pill-style status indicator.
+   Pair with a .badge--<state> modifier to pick the verdict palette. */
+.badge {
+  display: inline-block;
+  padding: 0.15em 0.6em;
+  border-radius: 10px;
+  font-size: 0.85em;
+  font-weight: bold;
+}
+.badge--accept { background: var(--verdict-accept-bg); color: var(--verdict-accept); }
+.badge--close_but { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
+.badge--reject { background: var(--verdict-reject-bg); color: var(--verdict-reject); }
