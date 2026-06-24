@@ -64,12 +64,24 @@ from apps.styles.models import Master
 # proceed — operator must upgrade Ellington first.
 CONSUMER_VERSION = "0.2.0"
 
-# GitHub Release URL template for the plugin's engine-rules releases.
-# The release tag is the input; the asset name is fixed per the
-# release-pipeline convention agreed with the plugin agent.
-RELEASE_URL_TEMPLATE = (
+# GitHub Release URL templates for the plugin's engine-rules releases.
+# The release tag is the input; asset names are fixed per the
+# release-pipeline convention.
+#
+# Bundle layout changed between v0.2 and v0.3: prior bundles carried
+# ``manifest.json`` at the root of engine-rules-bundle.tar.gz; v0.3+
+# distributes manifest as a separate release asset alongside the
+# tarball. We fetch both URLs in the HTTPS path; --bundle-path mode
+# (offline fixtures) keeps reading manifest-inside-tarball for back-
+# compat with older bundles + the engine-rules-fixture.tar.gz format.
+# See ellington-web#159.
+RELEASE_URL_TEMPLATE_BUNDLE = (
     "https://github.com/siege-analytics/musescore4-chord-library-plugin"
     "/releases/download/{tag}/engine-rules-bundle.tar.gz"
+)
+RELEASE_URL_TEMPLATE_MANIFEST = (
+    "https://github.com/siege-analytics/musescore4-chord-library-plugin"
+    "/releases/download/{tag}/manifest.json"
 )
 
 # Plugin firing-spec v0.1 §2 alias table. Maps legacy
@@ -144,8 +156,11 @@ class Command(BaseCommand):
                 " or set settings.ENGINE_RULES_RELEASE_TAG"
             )
 
-        with _open_bundle(bundle_path, release_tag) as tar:
-            manifest = _load_manifest(tar)
+        with _open_bundle(bundle_path, release_tag) as (tar, manifest_dict):
+            # manifest_dict is non-None when the release pipeline ships
+            # manifest.json as a separate asset (v0.3+); fall back to
+            # reading manifest-inside-tarball for offline / v0.2 paths.
+            manifest = manifest_dict if manifest_dict is not None else _load_manifest(tar)
             self._validate_manifest(manifest)
             rules_by_path = _load_rules_files(tar)
 
@@ -329,17 +344,39 @@ class Command(BaseCommand):
 @contextmanager
 def _open_bundle(
     bundle_path: str | None, release_tag: str | None
-) -> Iterator[tarfile.TarFile]:
-    """Yield a tarfile.TarFile for the bundle, from disk or HTTPS."""
+) -> Iterator[tuple[tarfile.TarFile, dict[str, Any] | None]]:
+    """Yield ``(tarfile, manifest_dict_or_None)`` for the bundle.
+
+    The plugin's v0.3+ release pipeline (``scripts/build_engine_rules_bundle.py``
+    + ``.github/workflows/engine-rules-release.yml``) ships ``manifest.json``
+    as a separate release asset alongside the tarball. This is the
+    canonical contract going forward — manifest is downloadable +
+    schema-validatable without decompressing the bundle, so consumers
+    can inspect metadata before deciding to ingest. Confirmed by the
+    plugin agent on 2026-06-23 after ellington-web#159 surfaced the gap.
+
+    Offline / fixture path (``--bundle-path``): yield ``(tar, None)`` —
+    caller falls back to ``_load_manifest(tar)`` for the manifest-inside-
+    tarball layout. Preserves compatibility with pre-v0.3 bundles and
+    with the synthetic in-memory bundles built by ``tests_sync.py``.
+
+    Release-tag path: fetch the bundle tarball AND the separate
+    ``manifest.json`` release asset from the same release tag, parse
+    the manifest, yield ``(tar, manifest_dict)``.
+    """
     if bundle_path:
         with tarfile.open(bundle_path, "r:gz") as tar:
-            yield tar
+            yield tar, None
         return
-    url = RELEASE_URL_TEMPLATE.format(tag=release_tag)
-    with urllib.request.urlopen(url) as resp:  # noqa: S310 — trusted GH URL
-        data = resp.read()
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        yield tar
+    bundle_url = RELEASE_URL_TEMPLATE_BUNDLE.format(tag=release_tag)
+    manifest_url = RELEASE_URL_TEMPLATE_MANIFEST.format(tag=release_tag)
+    with urllib.request.urlopen(bundle_url) as resp:  # noqa: S310 — trusted GH URL
+        bundle_data = resp.read()
+    with urllib.request.urlopen(manifest_url) as resp:  # noqa: S310 — trusted GH URL
+        manifest_data = resp.read()
+    manifest_dict = json.loads(manifest_data.decode("utf-8"))
+    with tarfile.open(fileobj=io.BytesIO(bundle_data), mode="r:gz") as tar:
+        yield tar, manifest_dict
 
 
 def _load_manifest(tar: tarfile.TarFile) -> dict[str, Any]:
