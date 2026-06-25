@@ -52,6 +52,23 @@ INSTALLED_APPS = [
     "apps.engine_rules",
     "apps.rule_review",
     "apps.audio",
+    # Wagtail (#190 epic / #191 spike). Order matters: contrib + core
+    # before our cms app. Wagtail's modelcluster + taggit are
+    # transitive dependencies that need explicit registration.
+    "wagtail.contrib.forms",
+    "wagtail.contrib.redirects",
+    "wagtail.embeds",
+    "wagtail.sites",
+    "wagtail.users",
+    "wagtail.snippets",
+    "wagtail.documents",
+    "wagtail.images",
+    "wagtail.search",
+    "wagtail.admin",
+    "wagtail",
+    "modelcluster",
+    "taggit",
+    "apps.cms",
 ]
 
 MIDDLEWARE = [
@@ -75,6 +92,11 @@ MIDDLEWARE = [
     # Referrer-Policy, X-Content-Type-Options. Late in the chain so
     # response is fully assembled before we annotate.
     'apps.core.middleware.SecurityHeadersMiddleware',
+    # Wagtail redirect middleware (#191) — must sit AFTER auth so
+    # logged-in user context is available for permission-aware
+    # redirects. Handles editor-defined permanent redirects without
+    # us writing custom views.
+    'wagtail.contrib.redirects.middleware.RedirectMiddleware',
 ]
 
 # Security headers (#227) — override per-env in deployment.
@@ -111,7 +133,7 @@ ROOT_URLCONF = 'ellington_web.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -233,3 +255,22 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 GRAPPELLI_ADMIN_TITLE = "Ellington"
 GRAPPELLI_ADMIN_HEADLINE = "Ellington — Practice Feedback"
 GRAPPELLI_SWITCH_USER = True
+
+# Wagtail Configuration (#190 epic / #191 spike) ------------------------
+# WAGTAIL_SITE_NAME shows in the admin top-bar; the public-visible URL
+# is configured via WAGTAILADMIN_BASE_URL for emails / absolute links.
+WAGTAIL_SITE_NAME = "Ellington"
+WAGTAILADMIN_BASE_URL = os.environ.get(
+    "WAGTAILADMIN_BASE_URL", "https://ellington.siegeanalytics.com",
+)
+# Default DB-backed search avoids an Elasticsearch dependency. Postgres-
+# specific search backend is wired in a later child of #190 once we have
+# real content to search.
+WAGTAILSEARCH_BACKENDS = {
+    "default": {
+        "BACKEND": "wagtail.search.backends.database",
+    },
+}
+# Wagtail-managed permitted file extensions for the documents app.
+# Spike-conservative; expanded as needs land.
+WAGTAILDOCS_EXTENSIONS = ["csv", "docx", "pdf", "txt"]
