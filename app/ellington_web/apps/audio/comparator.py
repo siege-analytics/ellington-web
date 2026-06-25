@@ -14,53 +14,50 @@ typed dataclasses so it's fully testable in isolation.
 
 Per child #248 of #232.
 
-Per-evidence verdict construction (cross-project: candidate text for
-firing-spec §10.4.1 per plugin agent ack of comparator-semantics
-bug surfaced by parity oracle PR #256 + fixed in PR #258 / #257)
+Per-evidence verdict construction (cross-project: canonical text for
+firing-spec §10.4.1 per plugin agent's #597 framing — three polarity
+classes — supersedes the YES/NO/N/A axis from earlier docstring revs)
 ============================================================
 
 **The §10.4 polarity × played-content table is the consumer-facing
-output, not a uniform algorithm.** Each evidence variant defines its
-own implicit "did the prescribed thing" predicate. Verdict is
-constructed from that predicate combined with polarity, not from a
-generic predicate that gets flipped by polarity.
+output, not a uniform algorithm.** Each evidence variant declares its
+**polarity class** — how (if at all) polarity participates in verdict
+construction. The class is a property of the variant, not the rule.
 
-Per-evidence predicate table (canonical):
+Three polarity classes (per plugin#597):
 
-| Evidence variant         | "Did the prescribed thing" predicate           | Polarity-relative? |
-|--------------------------|------------------------------------------------|--------------------|
-| ChordToneMembership      | matched_chord_tones / total ≥ 0.75 AND no off  | YES                |
-|                          | positive + predicate=T → satisfies             |                    |
-|                          | positive + predicate=F → violates              |                    |
-|                          | avoid    + predicate=T → violates              |                    |
-|                          | avoid    + predicate=F → satisfies             |                    |
-|--------------------------|------------------------------------------------|--------------------|
-| ScaleDrift               | scale_drift_semitones ≤ threshold (low drift)  | NO                 |
-|                          | Both 'positive: stay on scale' and 'avoid:     |                    |
-|                          | don't drift' want low drift. Verdict label     |                    |
-|                          | is the SAME regardless of polarity:            |                    |
-|                          | low drift → satisfies                          |                    |
-|                          | high drift → violates                          |                    |
-|--------------------------|------------------------------------------------|--------------------|
-| Deferred                 | (no predicate — verdict is always neutral)     | N/A                |
-| VoicingMatch (v2)        | TBD per voicing_match spec                     | TBD                |
-| RhythmAttack (v2)        | TBD per rhythm_attack spec                     | TBD                |
+- **polarity-relative** — verdict flips on polarity. The variant's
+  predicate names something that 'positive' rules want present and
+  'avoid' rules want absent. Polarity literally inverts satisfies ↔
+  violates.
 
-**Why scale_drift is polarity-invariant:** the "thing" the rule
-names (drift) is exactly what BOTH 'positive: stay on scale' AND
-'avoid: don't drift' rules want absent. Low drift satisfies the
-positive rule (stayed on scale) AND satisfies the avoid rule
-(didn't drift). The polarity is informational ("which kind of rule")
-but doesn't flip the satisfies/violates assignment.
+- **polarity-invariant** — verdict label is the SAME regardless of
+  polarity, because both polarity intents favor the same observation
+  direction. The variant's predicate is unidirectional (e.g. "low
+  drift is desirable"); both 'stay on scale' (positive) and "don't
+  drift" (avoid) want low drift, so both produce satisfies for low
+  drift / violates for high drift.
 
-**Why chord_tone_membership is polarity-relative:** the "thing"
-(playing the chord tones) is what 'positive' rules want and what
-'avoid' rules want absent. Polarity literally flips the meaning
-of "did the player do the prescribed thing."
+- **polarity-irrelevant** — verdict is always neutral. Polarity
+  doesn't enter the construction because the variant declares the
+  rule unevaluable at this pipeline version (DeferredEvidence).
 
-The general principle: when authoring a new evidence variant, define
-the variant's predicate semantics first, THEN decide whether polarity
-flips. Don't assume uniform flip.
+Per-evidence variant table (v0.1 canonical):
+
+| Evidence variant         | Predicate                                  | Polarity class       |
+|--------------------------|--------------------------------------------|----------------------|
+| ChordToneMembership      | matched / total ≥ 0.75 AND no off-chord    | polarity-relative    |
+| ScaleDrift               | scale_drift_semitones ≤ threshold          | polarity-invariant   |
+| Deferred                 | (no predicate — verdict always neutral)    | polarity-irrelevant  |
+| VoicingMatch (v2)        | TBD per voicing_match spec                 | TBD at v2 author     |
+| RhythmAttack (v2)        | TBD per rhythm_attack spec                 | TBD at v2 author     |
+
+**General authoring principle**: when designing a new evidence
+variant, declare its polarity class FIRST, then implement the
+predicate accordingly. The default assumption "all variants are
+polarity-relative" caused the original bug surfaced by parity
+oracle PR #256 — uniform flip was applied where it shouldn't have
+been (scale_drift is polarity-invariant, not polarity-relative).
 """
 
 from __future__ import annotations
