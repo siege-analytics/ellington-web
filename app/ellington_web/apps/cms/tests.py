@@ -1,14 +1,10 @@
-"""Tests for apps.cms — #191 Wagtail spike.
+"""Tests for apps.cms — #191 Wagtail spike + #194 brand integration.
 
 Verifies that Wagtail and the existing Django apps coexist:
 - Wagtail admin mounts at /cms/.
-- Django app routes (engine_rules, rule_review, voicings, charts,
-  practice, critique) are not shadowed by Wagtail's catch-all.
-
-These tests intentionally do NOT verify the HomePage render — that
-requires a Wagtail Site + root Page, which is created by the
-``wagtail_create_homepage`` data migration shipped by Wagtail at
-install time. The smoke we own here is: routing doesn't regress.
+- Django app routes are not shadowed by Wagtail's catch-all.
+- All app pages render with the shared shell marker
+  (id="ellington-nav" from templates/_site_nav.html).
 """
 
 from __future__ import annotations
@@ -40,7 +36,6 @@ class DjangoRoutesNotShadowedTests(TestCase):
     """
 
     def test_rule_review_routes_intact(self):
-        # rule_list, rule_library, admin_queue all in apps.rule_review.urls
         self.assertEqual(
             resolve(reverse("rule_review:rule_list")).view_name,
             "rule_review:rule_list",
@@ -53,13 +48,6 @@ class DjangoRoutesNotShadowedTests(TestCase):
         )
 
     def test_practice_routes_intact(self):
-        # practice has at least one named route; resolve via URL conf
-        from django.urls.resolvers import URLResolver
-        from django.urls import get_resolver
-
-        resolver = get_resolver()
-        # If practice/ wasn't shadowed, the resolver matches it as an
-        # include
         match = resolve("/practice/sessions/")
         self.assertNotIn("wagtail", (match.namespaces or []) + [match.namespace or ""])
 
@@ -69,8 +57,31 @@ class DjangoRoutesNotShadowedTests(TestCase):
 
     def test_accounts_login_intact(self):
         match = resolve("/accounts/login/")
-        # Either apps.core or django.contrib.auth — both are NOT wagtail
         self.assertNotIn("wagtail", (match.namespaces or []) + [match.namespace or ""])
+
+
+class SharedShellTests(TestCase):
+    """#194 — every Django-served page should render the shared shell.
+
+    The marker is ``id="ellington-nav"`` in templates/_site_nav.html.
+    Apps that extend templates/base.html inherit the shell; if any
+    template was left stranded on its old standalone base.html, the
+    marker won't appear.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="shell-tester", password=secrets.token_urlsafe(16),
+        )
+
+    def test_rule_library_carries_shell(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("rule_review:rule_library"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="ellington-nav"')
+
+    # Voicings shell test lands as a follow-up once apps.voicings
+    # merges (PR #188). This branch doesn't have apps.voicings.
 
 
 # ---------------------------------------------------------------------------
