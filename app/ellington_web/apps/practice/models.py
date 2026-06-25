@@ -147,7 +147,11 @@ class BackingTrack(models.Model):
         blank=True,
         on_delete=models.PROTECT,
         related_name="backing_tracks",
-        help_text="Which SoundBank rendered this backing's audio.",
+        help_text=(
+            "Which SoundBank rendered this backing's audio. "
+            "Nullable for back-compat with backings ingested "
+            "before #233 landed."
+        ),
     )
 
     class Meta:
