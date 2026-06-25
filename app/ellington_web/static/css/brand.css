@@ -204,3 +204,117 @@ a { color: var(--link); }
 .badge--accept { background: var(--verdict-accept-bg); color: var(--verdict-accept); }
 .badge--close_but { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
 .badge--reject { background: var(--verdict-reject-bg); color: var(--verdict-reject); }
+
+/* ====================================================================
+   Shared layout + component primitives (#194 brand integration).
+   Lifted from per-app base.html inline styles so the shell is
+   identical across Wagtail and Django renders.
+   ==================================================================== */
+
+.app-shell {
+  max-width: 1080px;
+  margin: 2em auto;
+  padding: 0 1em;
+}
+
+.site-nav {
+  border-bottom: 1px solid var(--bg-border);
+  padding-bottom: 0.5em;
+  margin-bottom: 1em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  align-items: baseline;
+}
+.site-nav .wordmark { font-size: var(--text-lg); margin: 0; }
+.site-nav a { text-decoration: none; }
+.site-nav a:hover { text-decoration: underline; }
+.site-nav .user-marker {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.sub-nav {
+  border-bottom: 1px solid var(--bg-border);
+  padding-bottom: 0.4em;
+  margin-bottom: 1.5em;
+}
+.sub-nav a { margin-right: 1em; }
+
+/* Flash messages — shared shape across apps. */
+.messages { list-style: none; padding: 0; margin: 0 0 1em; }
+.messages li {
+  background: var(--bg-elev);
+  border-left: 3px solid var(--link);
+  padding: 0.5em 1em;
+  margin-bottom: 0.5em;
+  border-radius: 0 3px 3px 0;
+}
+.messages li.error {
+  background: var(--verdict-reject-bg);
+  border-left-color: var(--verdict-reject);
+}
+.messages li.success {
+  background: var(--verdict-accept-bg);
+  border-left-color: var(--verdict-accept);
+}
+
+/* Tables — shared shape. */
+table.app-table { border-collapse: collapse; width: 100%; }
+table.app-table th,
+table.app-table td {
+  text-align: left;
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid var(--bg-border);
+  vertical-align: top;
+}
+table.app-table th { background: var(--bg); }
+
+/* Forms — shared shape. */
+.form p { margin: 1em 0; }
+.form label { display: block; font-weight: bold; margin-bottom: 0.2em; }
+.form input[type="text"],
+.form input[type="number"],
+.form select,
+.form textarea {
+  width: 100%;
+  padding: 0.4em;
+  border: 1px solid var(--bg-border);
+  border-radius: 3px;
+  font: inherit;
+  background: var(--bg-elev);
+  color: var(--fg);
+}
+
+button, input[type="submit"], .button {
+  padding: 0.5em 1em;
+  background: var(--link);
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+}
+button.destructive, input[type="submit"].destructive {
+  background: var(--chord-dim7);
+}
+
+.empty-state {
+  padding: 2em;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.meta { color: var(--fg-muted); font-size: var(--text-sm); }
+.helptext { color: var(--fg-muted); font-size: var(--text-sm); display: block; margin-top: 0.2em; }
+.errorlist { color: var(--verdict-reject); padding-left: 1.2em; }
+
+/* Pipeline / import status badges (charts app). Aligned with the
+   verdict-badge palette so reader memory transfers. */
+.badge--pending { background: var(--bg-elev); color: var(--fg-muted); }
+.badge--queued { background: var(--bg); color: var(--chord-min7); }
+.badge--running { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
+.badge--complete { background: var(--verdict-accept-bg); color: var(--verdict-accept); }
+.badge--partial { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
+.badge--failed { background: var(--verdict-reject-bg); color: var(--verdict-reject); }
