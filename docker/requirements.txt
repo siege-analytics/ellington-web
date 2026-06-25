@@ -47,3 +47,9 @@ music21>=9.9.0,<10
 # split a siege-analytics fork for org-owned releases, bump this
 # URL then.
 omr-leadsheet @ git+https://github.com/dheerajchand/omr-leadsheet.git@ced92abc0226e5d7ad4a539e1607e2c1ad2c959f
+
+# Wagtail CMS — #190 epic. Pins the latest 6.x. Brings in taggit +
+# modelcluster + draftjs_exporter + willow as transitive deps. The
+# wagtail catch-all URL is mounted LAST in ellington_web/urls.py so
+# the explicit Django app paths win first.
+wagtail>=6.3,<7
