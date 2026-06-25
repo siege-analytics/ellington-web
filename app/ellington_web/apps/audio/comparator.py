@@ -13,6 +13,54 @@ Pure-Python: no DB, no Celery, no audio dependency. Built against the
 typed dataclasses so it's fully testable in isolation.
 
 Per child #248 of #232.
+
+Per-evidence verdict construction (cross-project: candidate text for
+firing-spec §10.4.1 per plugin agent ack of comparator-semantics
+bug surfaced by parity oracle PR #256 + fixed in PR #258 / #257)
+============================================================
+
+**The §10.4 polarity × played-content table is the consumer-facing
+output, not a uniform algorithm.** Each evidence variant defines its
+own implicit "did the prescribed thing" predicate. Verdict is
+constructed from that predicate combined with polarity, not from a
+generic predicate that gets flipped by polarity.
+
+Per-evidence predicate table (canonical):
+
+| Evidence variant         | "Did the prescribed thing" predicate           | Polarity-relative? |
+|--------------------------|------------------------------------------------|--------------------|
+| ChordToneMembership      | matched_chord_tones / total ≥ 0.75 AND no off  | YES                |
+|                          | positive + predicate=T → satisfies             |                    |
+|                          | positive + predicate=F → violates              |                    |
+|                          | avoid    + predicate=T → violates              |                    |
+|                          | avoid    + predicate=F → satisfies             |                    |
+|--------------------------|------------------------------------------------|--------------------|
+| ScaleDrift               | scale_drift_semitones ≤ threshold (low drift)  | NO                 |
+|                          | Both 'positive: stay on scale' and 'avoid:     |                    |
+|                          | don't drift' want low drift. Verdict label     |                    |
+|                          | is the SAME regardless of polarity:            |                    |
+|                          | low drift → satisfies                          |                    |
+|                          | high drift → violates                          |                    |
+|--------------------------|------------------------------------------------|--------------------|
+| Deferred                 | (no predicate — verdict is always neutral)     | N/A                |
+| VoicingMatch (v2)        | TBD per voicing_match spec                     | TBD                |
+| RhythmAttack (v2)        | TBD per rhythm_attack spec                     | TBD                |
+
+**Why scale_drift is polarity-invariant:** the "thing" the rule
+names (drift) is exactly what BOTH 'positive: stay on scale' AND
+'avoid: don't drift' rules want absent. Low drift satisfies the
+positive rule (stayed on scale) AND satisfies the avoid rule
+(didn't drift). The polarity is informational ("which kind of rule")
+but doesn't flip the satisfies/violates assignment.
+
+**Why chord_tone_membership is polarity-relative:** the "thing"
+(playing the chord tones) is what 'positive' rules want and what
+'avoid' rules want absent. Polarity literally flips the meaning
+of "did the player do the prescribed thing."
+
+The general principle: when authoring a new evidence variant, define
+the variant's predicate semantics first, THEN decide whether polarity
+flips. Don't assume uniform flip.
 """
 
 from __future__ import annotations
