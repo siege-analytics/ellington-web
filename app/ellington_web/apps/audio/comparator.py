@@ -77,7 +77,7 @@ def _evaluate_one(
 
     # ----- Scale-tone-prescribing rules → scale drift ----------------
     if _prescribes_scale_constraint(then):
-        evidence, satisfied = _evaluate_scale_drift(obs)
+        evidence, satisfied = _evaluate_scale_drift(obs, then)
         return _build_verdict(
             rule=rule,
             evidence=evidence,
@@ -110,9 +110,15 @@ def _evaluate_one(
 
 def _prescribes_quality(then_action: dict) -> bool:
     """True when the ``then`` action names a chord quality / family
-    that we can match against ``observation.matched_chord_tones``."""
+    that we can match against ``observation.matched_chord_tones``.
+
+    Recognized keys (canonical + aliases):
+    - ``expected_chord_quality`` — canonical (plugin#596 fixture)
+    - ``chord_quality`` / ``quality`` / ``quality_family`` — aliases
+    """
     return any(
         key in then_action for key in (
+            "expected_chord_quality",
             "chord_quality", "quality", "quality_family",
         )
     )
@@ -120,9 +126,18 @@ def _prescribes_quality(then_action: dict) -> bool:
 
 def _prescribes_scale_constraint(then_action: dict) -> bool:
     """True when the ``then`` action names a scale-tone or scale-context
-    constraint we can grade via ``scale_drift_semitones``."""
+    constraint we can grade via ``scale_drift_semitones``.
+
+    Recognized keys (canonical + aliases):
+    - ``max_scale_drift_semitones`` — canonical (plugin#596 fixture);
+      value is the per-rule drift threshold
+    - ``scale_tones`` / ``stay_on_scale`` / ``scale_context_constraint``
+      — aliases without an explicit threshold (fall back to
+      ``_SCALE_DRIFT_THRESHOLD_SEMITONES``)
+    """
     return any(
         key in then_action for key in (
+            "max_scale_drift_semitones",
             "scale_tones", "stay_on_scale", "scale_context_constraint",
         )
     )
@@ -176,13 +191,29 @@ def _evaluate_chord_tone_membership(
 
 def _evaluate_scale_drift(
     obs: SliceObservation,
+    then_action: dict | None = None,
 ) -> tuple[ScaleDriftEvidence, bool]:
+    """Build a ScaleDriftEvidence using the rule's own drift threshold
+    when provided (canonical key ``max_scale_drift_semitones``), or
+    the comparator default otherwise.
+
+    drift_frame_count is the count of frames whose drift exceeds the
+    rule threshold. SliceObservation v0.1 carries scalar drift only;
+    we model that as 1 frame and report 0/1 accordingly. Per-frame
+    drift extraction is tracked in the basic_pitch upgrade (#242 v2).
+    """
+    then_action = then_action or {}
+    threshold = then_action.get(
+        "max_scale_drift_semitones", _SCALE_DRIFT_THRESHOLD_SEMITONES,
+    )
+
+    drift_frame_count = 1 if obs.scale_drift_semitones > threshold else 0
     evidence = ScaleDriftEvidence(
         median_drift_semitones=obs.scale_drift_semitones,
         max_drift_semitones=obs.scale_drift_semitones,
-        drift_frame_count=len(obs.played_pitches),
+        drift_frame_count=drift_frame_count,
     )
-    satisfied = obs.scale_drift_semitones <= _SCALE_DRIFT_THRESHOLD_SEMITONES
+    satisfied = obs.scale_drift_semitones <= threshold
     return evidence, satisfied
 
 
