@@ -162,3 +162,112 @@ class BackingTrackBankFKTests(TestCase):
         self.assertEqual(bt.bank_id, bank.pk)
         # Reverse relation
         self.assertIn(bt, bank.backing_tracks.all())
+
+
+# ---------------------------------------------------------------------------
+# #250 — AudioVerdict storage model
+# ---------------------------------------------------------------------------
+
+
+from datetime import datetime, timezone as dt_timezone  # noqa: E402
+
+from apps.audio.models import (  # noqa: E402
+    AudioVerdict, PolarityChoice, VerdictChoice,
+)
+
+
+class AudioVerdictModelTests(TestCase):
+    def setUp(self):
+        from apps.practice.models import PracticeSession, Recording
+        from apps.charts.models import Song, Songbook
+        from apps.styles.models import StylePreset, Master, Style, Idiom
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="verdict-tester", password="pw",
+        )
+        sb = Songbook.objects.create(slug="verdict-sb", title="VB")
+        song = Song.objects.create(
+            slug="verdict-song", title="VS",
+            key="C", time_signature="4/4",
+            default_tempo_bpm=120, songbook=sb,
+        )
+        master = Master.objects.create(slug="m", name="m")
+        style = Style.objects.create(slug="s", name="s")
+        idiom = Idiom.objects.create(slug="i", name="i")
+        preset = StylePreset.objects.create(
+            slug="p", master=master, style=style, idiom=idiom,
+            display_name="P",
+        )
+        session = PracticeSession.objects.create(
+            user=self.user, song=song, target_preset=preset,
+        )
+        self.recording = Recording.objects.create(
+            session=session, file_ref="recordings/x.wav",
+        )
+
+    def test_create_verdict_row(self):
+        v = AudioVerdict.objects.create(
+            recording=self.recording,
+            slice_id="s-001",
+            rule_id="r-001",
+            rule_polarity=PolarityChoice.POSITIVE,
+            verdict=VerdictChoice.SATISFIES,
+            evidence_type="chord_tone_membership",
+            evidence_payload={"matched": 4, "total": 4, "missing": [], "extra": []},
+            verdict_confidence=0.82,
+            rule_evaluability_confidence=1.0,
+        )
+        self.assertEqual(v.recording_id, self.recording.pk)
+        self.assertEqual(v.evidence_payload["matched"], 4)
+
+    def test_unique_constraint_on_recording_slice_rule(self):
+        AudioVerdict.objects.create(
+            recording=self.recording,
+            slice_id="s-002", rule_id="r-002",
+            rule_polarity=PolarityChoice.POSITIVE,
+            verdict=VerdictChoice.NEUTRAL,
+            evidence_type="deferred",
+            evidence_payload={"reason": "x", "deferred_until_version": "v0.2"},
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            AudioVerdict.objects.create(
+                recording=self.recording,
+                slice_id="s-002", rule_id="r-002",
+                rule_polarity=PolarityChoice.POSITIVE,
+                verdict=VerdictChoice.VIOLATES,
+                evidence_type="deferred",
+                evidence_payload={},
+            )
+
+    def test_round_trip_from_dataclass(self):
+        """Build a RuleVerdict dataclass + asdict() the evidence → AudioVerdict row."""
+        import dataclasses
+        from apps.audio.contract import (
+            ChordToneMembershipEvidence, RuleVerdict,
+        )
+
+        ev = ChordToneMembershipEvidence(
+            matched=3, total=4, missing=("b7",), extra=(),
+        )
+        rv = RuleVerdict(
+            slice_id="s-003", rule_id="r-003",
+            rule_polarity="positive", verdict="violates",
+            evidence=ev,
+            verdict_confidence=0.6,
+            rule_evaluability_confidence=0.9,
+        )
+        row = AudioVerdict.objects.create(
+            recording=self.recording,
+            slice_id=rv.slice_id,
+            rule_id=rv.rule_id,
+            rule_polarity=rv.rule_polarity,
+            verdict=rv.verdict,
+            evidence_type=rv.evidence.type,
+            evidence_payload=dataclasses.asdict(rv.evidence),
+            verdict_confidence=rv.verdict_confidence,
+            rule_evaluability_confidence=rv.rule_evaluability_confidence,
+        )
+        self.assertEqual(row.evidence_payload["matched"], 3)
+        self.assertEqual(row.evidence_type, "chord_tone_membership")
