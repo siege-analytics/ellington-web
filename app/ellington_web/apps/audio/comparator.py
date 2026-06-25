@@ -61,27 +61,36 @@ def compare_slice(
 def _evaluate_one(
     rule: RuleFireResult, obs: SliceObservation,
 ) -> RuleVerdict:
-    """Pick an evaluator based on the ``then_action`` shape."""
+    """Pick an evaluator based on the ``then_action`` shape.
+
+    Each evaluator returns the verdict DIRECTLY given (polarity,
+    observation) — uniform polarity-flip was wrong for scale_drift
+    per parity oracle PR #256 + ticket #257.
+    """
     then = rule.then_action or {}
 
     # ----- Quality-prescribing rules → chord-tone membership ---------
     if _prescribes_quality(then):
-        evidence, satisfied = _evaluate_chord_tone_membership(obs)
+        evidence, verdict_label = _evaluate_chord_tone_membership(
+            obs, rule.polarity,
+        )
         return _build_verdict(
             rule=rule,
             evidence=evidence,
-            satisfied=satisfied,
+            verdict_label=verdict_label,
             obs=obs,
             evaluability=1.0,
         )
 
     # ----- Scale-tone-prescribing rules → scale drift ----------------
     if _prescribes_scale_constraint(then):
-        evidence, satisfied = _evaluate_scale_drift(obs)
+        evidence, verdict_label = _evaluate_scale_drift(
+            obs, rule.polarity,
+        )
         return _build_verdict(
             rule=rule,
             evidence=evidence,
-            satisfied=satisfied,
+            verdict_label=verdict_label,
             obs=obs,
             evaluability=1.0,
         )
@@ -153,37 +162,55 @@ def _deferral_reason(then_action: dict) -> str:
 
 
 def _evaluate_chord_tone_membership(
-    obs: SliceObservation,
-) -> tuple[ChordToneMembershipEvidence, bool]:
-    """Build a ChordToneMembershipEvidence and return whether the
-    canonical match condition holds."""
+    obs: SliceObservation, polarity: str,
+) -> tuple[ChordToneMembershipEvidence, str]:
+    """Chord-tone-membership IS polarity-relative.
+
+    - positive rule wants the player to play the chord tones
+    - avoid rule wants the player NOT to play those tones
+
+    So 'matched_ok' triggers satisfies for positive, violates for avoid.
+    """
     evidence = ChordToneMembershipEvidence(
         matched=obs.matched_chord_tones,
         total=obs.total_chord_tones,
         missing=tuple(obs.off_scale_tones),
         extra=tuple(obs.off_chord_tones),
     )
-    # "Satisfied" here means the player hit ≥ majority of chord tones
-    # AND didn't add any non-chord tones. Threshold tunable; defaults
-    # conservative so v0.1 doesn't over-claim satisfies.
     if obs.total_chord_tones == 0:
-        satisfied = obs.matched_chord_tones > 0
+        matched_ok = obs.matched_chord_tones > 0
     else:
         coverage = obs.matched_chord_tones / obs.total_chord_tones
-        satisfied = coverage >= 0.75 and len(obs.off_chord_tones) == 0
-    return evidence, satisfied
+        matched_ok = (
+            coverage >= 0.75 and len(obs.off_chord_tones) == 0
+        )
+
+    if polarity == "positive":
+        verdict_label = "satisfies" if matched_ok else "violates"
+    else:  # "avoid"
+        verdict_label = "violates" if matched_ok else "satisfies"
+    return evidence, verdict_label
 
 
 def _evaluate_scale_drift(
-    obs: SliceObservation,
-) -> tuple[ScaleDriftEvidence, bool]:
+    obs: SliceObservation, polarity: str,
+) -> tuple[ScaleDriftEvidence, str]:
+    """Scale-drift is NOT polarity-relative — surfaced by parity oracle
+    PR #256 + ticket #257.
+
+    Both 'positive: stay on scale' and 'avoid: don't drift off scale'
+    rules want the SAME outcome: low drift. The verdict logic is
+    identical regardless of polarity for this evidence type. Plugin
+    #596's canonical fixture exercises this.
+    """
     evidence = ScaleDriftEvidence(
         median_drift_semitones=obs.scale_drift_semitones,
         max_drift_semitones=obs.scale_drift_semitones,
         drift_frame_count=len(obs.played_pitches),
     )
-    satisfied = obs.scale_drift_semitones <= _SCALE_DRIFT_THRESHOLD_SEMITONES
-    return evidence, satisfied
+    low_drift = obs.scale_drift_semitones <= _SCALE_DRIFT_THRESHOLD_SEMITONES
+    verdict_label = "satisfies" if low_drift else "violates"
+    return evidence, verdict_label
 
 
 # ---------------------------------------------------------------------------
@@ -195,28 +222,24 @@ def _build_verdict(
     *,
     rule: RuleFireResult,
     evidence: EvidenceUnion,
-    satisfied: bool,
+    verdict_label: str,
     obs: SliceObservation,
     evaluability: float,
 ) -> RuleVerdict:
-    """Apply §10.4 polarity × satisfied → verdict + confidence."""
+    """Wrap the per-evaluator verdict_label into a RuleVerdict, applying
+    the §10.6 confidence threshold for indeterminate.
+
+    Per #257 fix: each evaluator now produces the verdict directly
+    (polarity-aware), so this just threads it through with the
+    confidence math. No uniform polarity flip — that broke for
+    scale_drift per parity oracle PR #256.
+    """
     composite = obs.observation_confidence * evaluability
 
     if composite < _INDETERMINATE_THRESHOLD:
         verdict = "indeterminate"
     else:
-        # §10.4 cross-product:
-        # positive × satisfied → satisfies
-        # positive × not satisfied → violates
-        # avoid × not did-the-thing (satisfied = "didn't do avoided") → satisfies
-        # avoid × did-the-thing (satisfied = False here means they did) → violates
-        if rule.polarity == "positive":
-            verdict = "satisfies" if satisfied else "violates"
-        else:  # "avoid"
-            # In the avoid-polarity case, `satisfied=True` from
-            # _evaluate_chord_tone_membership means the player DID hit
-            # the chord tones — which for avoid-polarity is bad.
-            verdict = "violates" if satisfied else "satisfies"
+        verdict = verdict_label
 
     return RuleVerdict(
         slice_id=obs.slice_id,
