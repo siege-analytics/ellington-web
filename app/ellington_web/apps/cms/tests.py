@@ -71,3 +71,73 @@ class DjangoRoutesNotShadowedTests(TestCase):
         match = resolve("/accounts/login/")
         # Either apps.core or django.contrib.auth — both are NOT wagtail
         self.assertNotIn("wagtail", (match.namespaces or []) + [match.namespace or ""])
+
+
+# ---------------------------------------------------------------------------
+# #196 — Pedagogue Wagtail group sync
+# ---------------------------------------------------------------------------
+
+
+from django.contrib.auth.models import Group  # noqa: E402
+
+from apps.core.models import UserProfile  # noqa: E402
+
+
+PEDAGOGUE_GROUP_NAME = "Pedagogue"
+
+
+class PedagogueGroupSyncTests(TestCase):
+    """The Pedagogue Wagtail Group exists (migration 0002) and
+    UserProfile.is_pedagogue toggles drive Group membership."""
+
+    def test_group_exists_after_migration(self):
+        self.assertTrue(
+            Group.objects.filter(name=PEDAGOGUE_GROUP_NAME).exists(),
+            "Migration 0002_pedagogue_group should have created the "
+            "Pedagogue Wagtail Group.",
+        )
+
+    def test_promotion_adds_user_to_group(self):
+        user = User.objects.create_user(
+            username="new-pedagogue", password=secrets.token_urlsafe(16),
+        )
+        profile = UserProfile.objects.create(user=user, is_pedagogue=False)
+
+        # Re-load to populate _initial_role_values via post_init
+        profile = UserProfile.objects.get(pk=profile.pk)
+        profile.is_pedagogue = True
+        profile.save()
+
+        group = Group.objects.get(name=PEDAGOGUE_GROUP_NAME)
+        self.assertIn(group, user.groups.all())
+
+    def test_demotion_removes_user_from_group(self):
+        user = User.objects.create_user(
+            username="ex-pedagogue", password=secrets.token_urlsafe(16),
+        )
+        UserProfile.objects.create(user=user, is_pedagogue=True)
+        group = Group.objects.get(name=PEDAGOGUE_GROUP_NAME)
+        user.groups.add(group)
+
+        profile = UserProfile.objects.get(user=user)
+        profile.is_pedagogue = False
+        profile.save()
+
+        self.assertNotIn(group, user.groups.all())
+
+    def test_signal_is_noop_when_no_change(self):
+        """Saving the profile without changing is_pedagogue doesn't
+        thrash group membership."""
+        user = User.objects.create_user(
+            username="stable-pedagogue", password=secrets.token_urlsafe(16),
+        )
+        UserProfile.objects.create(user=user, is_pedagogue=True)
+        group = Group.objects.get(name=PEDAGOGUE_GROUP_NAME)
+        user.groups.add(group)
+        before = set(user.groups.values_list("name", flat=True))
+
+        profile = UserProfile.objects.get(user=user)
+        profile.save()  # no field change
+
+        after = set(user.groups.values_list("name", flat=True))
+        self.assertEqual(before, after)
