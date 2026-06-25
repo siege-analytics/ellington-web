@@ -166,8 +166,8 @@ class AnalyzeRecordingTaskTests(TestCase):
         ), mock.patch(
             "apps.audio.storage.absolute_path_for", return_value="/tmp/c.wav",
         ):
-            from apps.audio.analyze import analyze_recording
-            count = analyze_recording(self.recording.pk)
+            from apps.audio.analyze import generate_verdicts
+            count = generate_verdicts(self.recording.pk)
 
         self.assertEqual(count, 1)
         verdict = AudioVerdict.objects.get(recording=self.recording)
@@ -186,8 +186,8 @@ class AnalyzeRecordingTaskTests(TestCase):
         self.session.backing_track = None
         self.session.save(update_fields=["backing_track"])
 
-        from apps.audio.analyze import analyze_recording
-        count = analyze_recording(self.recording.pk)
+        from apps.audio.analyze import generate_verdicts
+        count = generate_verdicts(self.recording.pk)
 
         self.assertEqual(count, 0)
         self.recording.refresh_from_db()

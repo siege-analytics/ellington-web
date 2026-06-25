@@ -1,4 +1,9 @@
-"""analyze_recording — end-to-end audio analysis Celery task (#250).
+"""generate_verdicts — end-to-end §10 audio analysis Celery task (#250, #261).
+
+Renamed from analyze_recording → generate_verdicts per #261 to avoid
+collision with the pre-existing apps.practice.tasks.analyze_recording
+(sub-4 chord-detection pipeline). Distinct tasks; this one produces
+§10 RuleVerdict rows, that one runs chord detection.
 
 When a Recording exists with both a user audio file (file_ref) and a
 canonical BackingTrack (audio_ref), this task runs:
@@ -59,7 +64,7 @@ def iter_slices_for_song(song):
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def analyze_recording(self, recording_id: int) -> int:
+def generate_verdicts(self, recording_id: int) -> int:
     """End-to-end audio analysis for one Recording.
 
     Returns the count of AudioVerdict rows created.
@@ -237,4 +242,4 @@ def _slice_from_spec(slice_spec, PlayedPitch_cls, Slice_cls):
     )
 
 
-__all__ = ["analyze_recording", "iter_slices_for_song"]
+__all__ = ["generate_verdicts", "iter_slices_for_song"]
