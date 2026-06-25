@@ -1,24 +1,33 @@
-"""§10 parity oracle roundtrip test (#255 / cross-project plugin#596).
+"""§10 parity oracle roundtrip test (#255 / plugin#596).
 
-Loads the canonical conformance fixture (1 SliceObservation + 3
-RuleFireResult inputs + expected RuleVerdict outputs covering all
-three v0.1 evidence variants) and asserts that ``compare_slice()``
-reproduces the expected outputs field-by-field.
+Phase B: loads the canonical conformance fixture vendored from the
+firing-spec repo and asserts that ``compare_slice()`` reproduces the
+expected outputs field-by-field.
 
-If our comparator drifts from plugin's §10 spec, this test fails
-loud — the exact drift signal we wanted. Per plugin agent on
-plugin#596: this test runs **behavior**, not text, so it catches
-drift that a doc-grep test would miss.
+Canonical fixture provenance:
+- Source: plugin#596 (firing-spec engine-rules)
+- Pinned at SHA: ``8f60fc8``
+- Raw URL: https://raw.githubusercontent.com/siege-analytics/musescore4-chord-library-plugin/8f60fc8/docs/fixtures/conformance-v0.2.1-fixture.json
+- Vendored at: app/ellington_web/apps/audio/fixtures/conformance-v0.2.1-fixture.json
 
-Phase A (this PR): fixture inlined as a Python constant per plugin
-agent's PR #596 description.
-Phase B (follow-up after plugin#596 merges): swap the inline
-constant for ``json.load(open(canonical_fixture_path))``. The shape
-should match exactly; if it doesn't, Phase A's structural test
-catches the inline-vs-canonical mismatch when we swap.
+If our comparator drifts from plugin's §10 spec, this test fails loud —
+the exact drift signal the oracle was designed for. Per plugin agent:
+"drift is loud, not silent."
+
+Known divergences surfaced by Phase B (to be fixed in follow-up ticket):
+- canonical ``then_action`` keys (``expected_chord_quality``,
+  ``max_scale_drift_semitones``, ``action``) do not match what
+  ``_prescribes_quality`` / ``_prescribes_scale_constraint`` look for
+- ``ScaleDriftEvidence`` canonical shape has distinct
+  ``median_drift_semitones`` / ``max_drift_semitones`` /
+  ``drift_frame_count`` computed against the rule's threshold; our
+  evaluator currently reuses ``obs.scale_drift_semitones`` 3×
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 from django.test import TestCase
 
@@ -27,198 +36,176 @@ from apps.audio.contract import (
     ChordToneMembershipEvidence,
     DeferredEvidence,
     PlayedPitch,
-    RuleVerdict,
     ScaleDriftEvidence,
     SliceObservation,
 )
 from apps.engine_rules.firing import RuleFireResult
 
 
-# ---------------------------------------------------------------------------
-# Fixture — mirrors plugin/docs/fixtures/conformance-v0.2.1-fixture.json
-# from plugin#596. Replace with json.load when canonical file lands.
-# ---------------------------------------------------------------------------
+FIXTURE_PATH = (
+    Path(__file__).parent / "fixtures" / "conformance-v0.2.1-fixture.json"
+)
+PINNED_PLUGIN_SHA = "8f60fc8"
 
 
-def _build_fixture_observation() -> SliceObservation:
-    """Cmaj7 context — player hit all 4 chord tones, stayed on scale."""
+def _load_fixture() -> dict:
+    with FIXTURE_PATH.open() as f:
+        return json.load(f)
+
+
+def _build_observation(payload: dict) -> SliceObservation:
     return SliceObservation(
-        slice_id="fixture-slice-001",
-        played_pitches=(
-            PlayedPitch(pitch_name="C4", duration_s=0.4, confidence=0.9),
-            PlayedPitch(pitch_name="E4", duration_s=0.4, confidence=0.85),
-            PlayedPitch(pitch_name="G4", duration_s=0.4, confidence=0.88),
-            PlayedPitch(pitch_name="B4", duration_s=0.4, confidence=0.82),
+        slice_id=payload["slice_id"],
+        played_pitches=tuple(
+            PlayedPitch(
+                pitch_name=p["pitch_name"],
+                duration_s=p["duration_s"],
+                confidence=p["confidence"],
+            )
+            for p in payload["played_pitches"]
         ),
-        played_intervals_relative_to_root=(0, 4, 7, 11),
-        inferred_chord_quality=None,
-        matched_chord_tones=4,
-        total_chord_tones=4,
-        off_chord_tones=(),
-        off_scale_tones=(),
-        scale_drift_semitones=0.2,
-        alignment_confidence=0.85,
-        pitch_extraction_confidence=0.72,
-        observation_confidence=0.61,
+        played_intervals_relative_to_root=tuple(
+            payload["played_intervals_relative_to_root"]
+        ),
+        inferred_chord_quality=payload["inferred_chord_quality"],
+        matched_chord_tones=payload["matched_chord_tones"],
+        total_chord_tones=payload["total_chord_tones"],
+        off_chord_tones=tuple(payload["off_chord_tones"]),
+        off_scale_tones=tuple(payload["off_scale_tones"]),
+        scale_drift_semitones=payload["scale_drift_semitones"],
+        alignment_confidence=payload["alignment_confidence"],
+        pitch_extraction_confidence=payload["pitch_extraction_confidence"],
+        observation_confidence=payload["observation_confidence"],
     )
 
 
-def _build_fixture_rule_fires() -> list[RuleFireResult]:
-    """Three rules covering the three v0.1 evidence variants per
-    plugin#596's fixture description."""
-    return [
-        # 1. Voicing-prescriptive → neutral + DeferredEvidence
-        RuleFireResult(
-            rule_id="fixture-rule-voicing",
-            preference=2,
-            polarity="positive",
-            then_action={"voicing": "shell_137"},
-            anchor="Joe Pass shell voicings",
-            source_page=42,
-            matched_dimensions={},
-            confidence=1.0,
-            applicability_reasons=[],
-        ),
-        # 2. Chord-quality-prescriptive → satisfies + ChordToneMembershipEvidence
-        RuleFireResult(
-            rule_id="fixture-rule-quality",
-            preference=1,
-            polarity="positive",
-            then_action={"chord_quality": "maj7"},
-            anchor="Cmaj7 quality match",
-            source_page=10,
-            matched_dimensions={},
-            confidence=1.0,
-            applicability_reasons=[],
-        ),
-        # 3. Avoid scale-drift → satisfies + ScaleDriftEvidence
-        # (demonstrates §10.4 cross-product on the avoid side)
-        RuleFireResult(
-            rule_id="fixture-rule-avoid-drift",
-            preference=-1,
-            polarity="avoid",
-            then_action={"scale_tones": ["1", "3", "5", "7"]},
-            anchor="Avoid drifting off the major-7 scale",
-            source_page=88,
-            matched_dimensions={},
-            confidence=1.0,
-            applicability_reasons=[],
-        ),
-    ]
-
-
-# Expected outputs per plugin#596's fixture. Field names + values match
-# the canonical fixture JSON one-to-one.
-_EXPECTED_VERDICTS = [
-    # 1. Voicing rule → neutral + DeferredEvidence
-    {
-        "slice_id": "fixture-slice-001",
-        "rule_id": "fixture-rule-voicing",
-        "rule_polarity": "positive",
-        "verdict": "neutral",
-        "evidence_type": "deferred",
-        "evidence_payload_keys": {
-            "type", "reason", "deferred_until_version",
-        },
-        "rule_evaluability_confidence": 0.0,
-    },
-    # 2. Quality rule → satisfies + ChordToneMembershipEvidence
-    {
-        "slice_id": "fixture-slice-001",
-        "rule_id": "fixture-rule-quality",
-        "rule_polarity": "positive",
-        "verdict": "satisfies",
-        "evidence_type": "chord_tone_membership",
-        "evidence_payload_keys": {"type", "matched", "total", "missing", "extra"},
-        "rule_evaluability_confidence": 1.0,
-    },
-    # 3. Avoid scale-tones rule → satisfies + ScaleDriftEvidence
-    # Player has low drift (0.2 semitones); for an "avoid drifting"
-    # rule, low drift = satisfied the avoidance. Per §10.4
-    # cross-product: avoid × did-not-do-avoided-thing = satisfies.
-    {
-        "slice_id": "fixture-slice-001",
-        "rule_id": "fixture-rule-avoid-drift",
-        "rule_polarity": "avoid",
-        "verdict": "satisfies",
-        "evidence_type": "scale_drift",
-        "evidence_payload_keys": {
-            "type", "median_drift_semitones", "max_drift_semitones",
-            "drift_frame_count",
-        },
-        "rule_evaluability_confidence": 1.0,
-    },
-]
+def _build_rule_fire(payload: dict) -> RuleFireResult:
+    return RuleFireResult(
+        rule_id=payload["rule_id"],
+        preference=payload["preference"],
+        polarity=payload["polarity"],
+        then_action=payload["then_action"],
+        anchor=payload["anchor"],
+        source_page=payload["source_page"],
+        matched_dimensions=payload["matched_dimensions"],
+        confidence=payload["confidence"],
+        applicability_reasons=payload["applicability_reasons"],
+    )
 
 
 class ParityOracleRoundtripTests(TestCase):
-    """Comparator output matches plugin#596's expected fixture outputs."""
+    """Comparator output matches plugin#596's canonical fixture."""
 
-    def setUp(self):
-        self.obs = _build_fixture_observation()
-        self.rule_fires = _build_fixture_rule_fires()
-        self.actual = compare_slice(self.rule_fires, self.obs)
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.fixture = _load_fixture()
+        cls.observation = _build_observation(cls.fixture["slice_observation"])
+        cls.rule_fires = [
+            _build_rule_fire(entry["rule_fire_result"])
+            for entry in cls.fixture["fired_rules"]
+        ]
+        cls.expected = [
+            entry["expected_rule_verdict"]
+            for entry in cls.fixture["fired_rules"]
+        ]
+        cls.actual = compare_slice(cls.rule_fires, cls.observation)
+
+    def test_fixture_version_pinned(self):
+        self.assertEqual(
+            self.fixture["_consumer_contract_version"], "0.2.1",
+            msg="Fixture contract version drifted from 0.2.1",
+        )
 
     def test_three_verdicts_returned(self):
         self.assertEqual(len(self.actual), 3)
 
-    def test_verdict_1_voicing_neutral_deferred(self):
-        expected = _EXPECTED_VERDICTS[0]
+    def test_verdict_voicing_neutral_deferred(self):
+        expected = self.expected[0]
         actual = self.actual[0]
         self.assertEqual(actual.slice_id, expected["slice_id"])
         self.assertEqual(actual.rule_id, expected["rule_id"])
         self.assertEqual(actual.rule_polarity, expected["rule_polarity"])
         self.assertEqual(actual.verdict, expected["verdict"])
         self.assertIsInstance(actual.evidence, DeferredEvidence)
-        self.assertEqual(actual.evidence.type, expected["evidence_type"])
         self.assertEqual(
             actual.rule_evaluability_confidence,
             expected["rule_evaluability_confidence"],
         )
 
-    def test_verdict_2_quality_satisfies_chord_tone(self):
-        expected = _EXPECTED_VERDICTS[1]
+    def test_verdict_quality_satisfies_chord_tone(self):
+        """Canonical fixture uses ``expected_chord_quality`` key.
+        Our ``_prescribes_quality`` currently looks for
+        ``chord_quality`` / ``quality`` / ``quality_family`` — this
+        test surfaces the key-name divergence as a failing assertion."""
+        expected = self.expected[1]
         actual = self.actual[1]
         self.assertEqual(actual.rule_id, expected["rule_id"])
-        self.assertEqual(actual.verdict, expected["verdict"])
-        self.assertIsInstance(actual.evidence, ChordToneMembershipEvidence)
-        self.assertEqual(actual.evidence.matched, 4)
-        self.assertEqual(actual.evidence.total, 4)
         self.assertEqual(
-            actual.rule_evaluability_confidence,
-            expected["rule_evaluability_confidence"],
+            actual.verdict, expected["verdict"],
+            msg=(
+                f"Comparator verdict ({actual.verdict!r}) disagrees "
+                f"with canonical ({expected['verdict']!r}). Likely "
+                "cause: ``_prescribes_quality`` doesn't recognize "
+                "canonical key ``expected_chord_quality``. Fix in "
+                "comparator.py, not this test."
+            ),
+        )
+        self.assertIsInstance(actual.evidence, ChordToneMembershipEvidence)
+        self.assertEqual(
+            actual.evidence.matched, expected["evidence"]["matched"],
+        )
+        self.assertEqual(
+            actual.evidence.total, expected["evidence"]["total"],
         )
 
-    def test_verdict_3_avoid_scale_drift_satisfies(self):
-        """Player has low drift; for an 'avoid drifting' rule per §10.4,
-        avoid × did-not-do-avoided-thing → satisfies. If this test
-        FAILS, the comparator's avoid+scale_drift semantics disagree
-        with plugin#596's canonical interpretation — file the fix as a
-        comparator-semantics ticket."""
-        expected = _EXPECTED_VERDICTS[2]
+    def test_verdict_avoid_scale_drift_satisfies(self):
+        """Canonical uses ``max_scale_drift_semitones`` key and expects
+        distinct median/max/drift_frame_count. Surfaces both the key
+        name divergence AND the ScaleDriftEvidence shape divergence."""
+        expected = self.expected[2]
         actual = self.actual[2]
         self.assertEqual(actual.rule_id, expected["rule_id"])
         self.assertEqual(actual.rule_polarity, "avoid")
         self.assertEqual(
             actual.verdict, expected["verdict"],
             msg=(
-                "Comparator's avoid+scale-drift verdict ("
-                f"{actual.verdict!r}) disagrees with plugin#596 fixture "
-                f"(expected {expected['verdict']!r}). This is the drift "
-                "signal — fix in comparator.py, not this test."
+                f"Comparator verdict ({actual.verdict!r}) disagrees "
+                f"with canonical ({expected['verdict']!r}). Likely "
+                "cause: ``_prescribes_scale_constraint`` doesn't "
+                "recognize canonical key ``max_scale_drift_semitones``."
             ),
         )
         self.assertIsInstance(actual.evidence, ScaleDriftEvidence)
         self.assertEqual(
-            actual.rule_evaluability_confidence,
-            expected["rule_evaluability_confidence"],
+            actual.evidence.median_drift_semitones,
+            expected["evidence"]["median_drift_semitones"],
+            msg=(
+                "ScaleDriftEvidence.median_drift_semitones diverged "
+                "from canonical. Our evaluator currently reuses "
+                "obs.scale_drift_semitones for all three fields; "
+                "canonical expects per-frame computation."
+            ),
+        )
+        self.assertEqual(
+            actual.evidence.max_drift_semitones,
+            expected["evidence"]["max_drift_semitones"],
+        )
+        self.assertEqual(
+            actual.evidence.drift_frame_count,
+            expected["evidence"]["drift_frame_count"],
+            msg=(
+                "drift_frame_count must be counted against the rule's "
+                "``max_scale_drift_semitones`` threshold, not "
+                "len(played_pitches)."
+            ),
         )
 
     def test_composite_confidence_identity(self):
         """§10.6: verdict_confidence == observation_confidence × evaluability."""
         for actual in self.actual:
             expected_composite = (
-                self.obs.observation_confidence
+                self.observation.observation_confidence
                 * actual.rule_evaluability_confidence
             )
             self.assertAlmostEqual(
