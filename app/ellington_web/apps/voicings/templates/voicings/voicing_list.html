@@ -1,0 +1,62 @@
+{% extends "voicings/base.html" %}
+
+{% block title %}Voicings — Ellington{% endblock %}
+
+{% block content %}
+<h1>Voicings ({{ total_active }})</h1>
+
+<form method="get" class="filters">
+  <label>
+    Quality:
+    <select name="quality" onchange="this.form.submit()">
+      <option value="">— any —</option>
+      {% for q in qualities %}
+        <option value="{{ q }}" {% if q == filter_quality %}selected{% endif %}>{{ q }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Category:
+    <select name="category" onchange="this.form.submit()">
+      <option value="">— any —</option>
+      {% for c in categories %}
+        <option value="{{ c }}" {% if c == filter_category %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Root:
+    <input type="text" name="root" value="{{ filter_root }}" maxlength="2" size="3" placeholder="C">
+  </label>
+  <button type="submit">Filter</button>
+  {% if filter_quality or filter_category or filter_root %}
+    <a href="{% url 'voicings:voicing_list' %}">Clear</a>
+  {% endif %}
+</form>
+
+{% if page_obj.object_list %}
+<div class="voicing-grid">
+  {% for v in page_obj.object_list %}
+    <div class="voicing-card">
+      <a href="{% url 'voicings:voicing_detail' v.pk %}">
+        <div class="name">{{ v.name }}</div>
+        {{ v.svg|safe }}
+        <div class="meta">{{ v.chord_quality }} · {{ v.category }}</div>
+      </a>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="pagination">
+  {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}{% if filter_quality %}&quality={{ filter_quality }}{% endif %}{% if filter_category %}&category={{ filter_category }}{% endif %}{% if filter_root %}&root={{ filter_root }}{% endif %}">prev</a>
+  {% endif %}
+  <span>page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}{% if filter_quality %}&quality={{ filter_quality }}{% endif %}{% if filter_category %}&category={{ filter_category }}{% endif %}{% if filter_root %}&root={{ filter_root }}{% endif %}">next</a>
+  {% endif %}
+</div>
+{% else %}
+<p><em>No voicings match these filters.</em></p>
+{% endif %}
+{% endblock %}

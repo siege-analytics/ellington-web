@@ -251,3 +251,4 @@ app/**/staticfiles/
 # rule above. Keep the override narrow so accidental top-level .json
 # files (scratch / config) stay ignored.
 !app/**/tests_data/*.json
+!app/**/fixtures/*.json
