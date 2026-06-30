@@ -30,7 +30,13 @@ from django.views.decorators.http import require_http_methods, require_POST
 from apps.core.roles import is_admin, is_pedagogue
 from apps.engine_rules.models import EngineRule
 
-from .models import RejectionAxis, Response, RuleComment, Verdict
+from .models import (
+    PedagogueConfirmation,
+    RejectionAxis,
+    Response,
+    RuleComment,
+    Verdict,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +128,9 @@ def rule_detail(request: HttpRequest, pk: int) -> HttpResponse:
     )
 
     my_response = Response.objects.filter(rule=rule, user=request.user).first()
+    my_confirmation = PedagogueConfirmation.objects.filter(
+        rule=rule, user=request.user,
+    ).first()
 
     if request.method == "POST":
         if not is_pedagogue(request.user) and not is_admin(request.user):
@@ -176,12 +185,69 @@ def rule_detail(request: HttpRequest, pk: int) -> HttpResponse:
     return render(request, "rule_review/rule_detail.html", {
         "rule": rule,
         "my_response": my_response,
+        "my_confirmation": my_confirmation,
         "verdict_choices": Verdict.choices,
         "axis_choices": RejectionAxis.choices,
         "comments": comments,
         "counts": counts_map,
         "can_write": is_pedagogue(request.user) or is_admin(request.user),
+        "confidence_choices": [1, 2, 3, 4, 5],
     })
+
+
+# ---------------------------------------------------------------------------
+# Per-axis confirmation (#186 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def confirm_rule(request: HttpRequest, pk: int) -> HttpResponse:
+    """Persist a pedagogue's per-axis confirmation for one rule.
+
+    Parallel to the verdict POST on rule_detail: distinct signal,
+    distinct form, same edit semantics (update_or_create). Per
+    ticket #186 Phase 1.
+    """
+    rule = get_object_or_404(EngineRule, pk=pk, is_active=True)
+    if not is_pedagogue(request.user) and not is_admin(request.user):
+        messages.error(
+            request,
+            "Only pedagogues may submit confirmations. Ask an admin for the role.",
+        )
+        return redirect("rule_review:rule_detail", pk=pk)
+
+    def _bool(name: str) -> bool:
+        return (request.POST.get(name) or "").strip().lower() in {
+            "1", "on", "true", "yes",
+        }
+
+    confidence_raw = (request.POST.get("overall_confidence") or "").strip()
+    confidence = None
+    if confidence_raw:
+        try:
+            confidence = int(confidence_raw)
+        except ValueError:
+            messages.error(request, "Confidence must be a number 1-5.")
+            return redirect("rule_review:rule_detail", pk=pk)
+        if not (1 <= confidence <= 5):
+            messages.error(request, "Confidence must be in the 1-5 range.")
+            return redirect("rule_review:rule_detail", pk=pk)
+
+    PedagogueConfirmation.objects.update_or_create(
+        rule=rule, user=request.user,
+        defaults={
+            "voicing_confirmed": _bool("voicing_confirmed"),
+            "voicing_note": (request.POST.get("voicing_note") or "").strip(),
+            "naming_confirmed": _bool("naming_confirmed"),
+            "naming_note": (request.POST.get("naming_note") or "").strip(),
+            "lesson_confirmed": _bool("lesson_confirmed"),
+            "lesson_note": (request.POST.get("lesson_note") or "").strip(),
+            "overall_confidence": confidence,
+        },
+    )
+    messages.success(request, "Confirmation saved.")
+    return redirect("rule_review:rule_detail", pk=pk)
 
 
 # ---------------------------------------------------------------------------

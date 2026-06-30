@@ -13,6 +13,7 @@ from django.urls import reverse
 from apps.core.models import UserProfile
 from apps.engine_rules.models import EngineRule, EngineRulesBundle
 from apps.rule_review.models import (
+    PedagogueConfirmation,
     RejectionAxis,
     Response,
     RuleComment,
@@ -480,3 +481,134 @@ class RuleLibraryViewTests(TestCase):
         self.assertEqual(payload["rule_id"], "joe-1")
         self.assertEqual(payload["master_id"], "joe-pass")
         self.assertIsNone(payload["chapter_n"])  # v2-reserved, model doesn't carry yet
+
+
+# ---------------------------------------------------------------------------
+# PedagogueConfirmation (#186 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+class PedagogueConfirmationModelTests(TestCase):
+    def setUp(self):
+        self.bundle = _make_bundle()
+        self.master = Master.objects.create(slug="joe-pass", name="Joe Pass")
+        self.rule = _make_rule(self.bundle, self.master)
+        self.trevor = _make_pedagogue("trevor")
+
+    def test_unique_per_rule_user(self):
+        PedagogueConfirmation.objects.create(
+            rule=self.rule, user=self.trevor, voicing_confirmed=True,
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            PedagogueConfirmation.objects.create(
+                rule=self.rule, user=self.trevor, naming_confirmed=True,
+            )
+
+    def test_update_or_create_flow(self):
+        PedagogueConfirmation.objects.update_or_create(
+            rule=self.rule, user=self.trevor,
+            defaults={"voicing_confirmed": True, "overall_confidence": 3},
+        )
+        obj, created = PedagogueConfirmation.objects.update_or_create(
+            rule=self.rule, user=self.trevor,
+            defaults={
+                "voicing_confirmed": True,
+                "naming_confirmed": True,
+                "overall_confidence": 5,
+            },
+        )
+        self.assertFalse(created)
+        self.assertTrue(obj.naming_confirmed)
+        self.assertEqual(obj.overall_confidence, 5)
+        self.assertEqual(
+            PedagogueConfirmation.objects.filter(rule=self.rule).count(), 1,
+        )
+
+    def test_confidence_range_constraint(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            PedagogueConfirmation.objects.create(
+                rule=self.rule, user=self.trevor, overall_confidence=6,
+            )
+
+    def test_confidence_null_allowed(self):
+        obj = PedagogueConfirmation.objects.create(
+            rule=self.rule, user=self.trevor, overall_confidence=None,
+        )
+        self.assertIsNone(obj.overall_confidence)
+
+
+class ConfirmRuleViewTests(TestCase):
+    def setUp(self):
+        self.bundle = _make_bundle()
+        self.master = Master.objects.create(slug="joe-pass", name="Joe Pass")
+        self.rule = _make_rule(self.bundle, self.master)
+        self.trevor = _make_pedagogue("trevor")
+        self.stranger = User.objects.create_user(
+            username="stranger", password=secrets.token_urlsafe(16),
+        )
+
+    def _url(self):
+        return reverse("rule_review:confirm_rule", args=[self.rule.pk])
+
+    def test_login_required(self):
+        response = self.client.post(self._url(), {})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.url)
+
+    def test_pedagogue_only_write(self):
+        self.client.force_login(self.stranger)
+        response = self.client.post(self._url(), {"voicing_confirmed": "1"})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(
+            PedagogueConfirmation.objects.filter(rule=self.rule).exists(),
+        )
+
+    def test_persists_all_axes(self):
+        self.client.force_login(self.trevor)
+        response = self.client.post(self._url(), {
+            "voicing_confirmed": "1",
+            "voicing_note": "matches CAGED shape III",
+            "naming_confirmed": "1",
+            "lesson_confirmed": "",
+            "lesson_note": "anchor only weakly supports",
+            "overall_confidence": "4",
+        })
+        self.assertEqual(response.status_code, 302)
+        obj = PedagogueConfirmation.objects.get(rule=self.rule, user=self.trevor)
+        self.assertTrue(obj.voicing_confirmed)
+        self.assertTrue(obj.naming_confirmed)
+        self.assertFalse(obj.lesson_confirmed)
+        self.assertEqual(obj.voicing_note, "matches CAGED shape III")
+        self.assertEqual(obj.lesson_note, "anchor only weakly supports")
+        self.assertEqual(obj.overall_confidence, 4)
+
+    def test_update_or_create_revises(self):
+        self.client.force_login(self.trevor)
+        self.client.post(self._url(), {
+            "voicing_confirmed": "1", "overall_confidence": "2",
+        })
+        self.client.post(self._url(), {
+            "voicing_confirmed": "1",
+            "naming_confirmed": "1",
+            "overall_confidence": "5",
+        })
+        objs = PedagogueConfirmation.objects.filter(rule=self.rule)
+        self.assertEqual(objs.count(), 1)
+        obj = objs.get()
+        self.assertTrue(obj.naming_confirmed)
+        self.assertEqual(obj.overall_confidence, 5)
+
+    def test_blank_confidence_persists_null(self):
+        self.client.force_login(self.trevor)
+        self.client.post(self._url(), {
+            "voicing_confirmed": "1", "overall_confidence": "",
+        })
+        obj = PedagogueConfirmation.objects.get(rule=self.rule, user=self.trevor)
+        self.assertIsNone(obj.overall_confidence)
+
+    def test_out_of_range_confidence_rejected(self):
+        self.client.force_login(self.trevor)
+        self.client.post(self._url(), {"overall_confidence": "9"})
+        self.assertFalse(
+            PedagogueConfirmation.objects.filter(rule=self.rule).exists(),
+        )
