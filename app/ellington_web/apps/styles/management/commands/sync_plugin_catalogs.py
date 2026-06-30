@@ -115,30 +115,75 @@ class Command(BaseCommand):
             action="store_true",
             help="Don't import masters.json even if present (large file).",
         )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help=(
+                "Load + validate each catalog file but DO NOT write to"
+                " the DB. Prints entry counts per catalog. Mirrors the"
+                " #218 / #220 dry-run pattern. (#222)"
+            ),
+        )
 
-    @transaction.atomic
     def handle(self, *args, **options):
         plugin_data_dir = Path(options["plugin_data_dir"])
         if not plugin_data_dir.is_dir():
             raise CommandError(f"plugin-data-dir does not exist: {plugin_data_dir}")
 
-        styles_imported = self._sync_styles(plugin_data_dir / "styles.json")
-        idioms_imported = self._sync_idioms(plugin_data_dir / "idioms.json")
+        if options.get("dry_run", False):
+            self._dry_run(plugin_data_dir, options.get("skip_masters", False))
+            return
 
-        masters_imported = 0
-        if not options.get("skip_masters"):
-            masters_path = plugin_data_dir / "masters.json"
-            if masters_path.is_file():
-                masters_imported = self._sync_masters(masters_path)
-            else:
-                self.stdout.write(self.style.WARNING(
-                    "  masters.json not found at the configured path — skipped."
-                ))
+        # Atomic only for the real write path. transaction.atomic as a
+        # context manager rather than decorator so --dry-run can skip it.
+        with transaction.atomic():
+            styles_imported = self._sync_styles(plugin_data_dir / "styles.json")
+            idioms_imported = self._sync_idioms(plugin_data_dir / "idioms.json")
+
+            masters_imported = 0
+            if not options.get("skip_masters"):
+                masters_path = plugin_data_dir / "masters.json"
+                if masters_path.is_file():
+                    masters_imported = self._sync_masters(masters_path)
+                else:
+                    self.stdout.write(self.style.WARNING(
+                        "  masters.json not found at the configured path — skipped."
+                    ))
 
         self.stdout.write(self.style.SUCCESS(
             f"sync_plugin_catalogs: {styles_imported} styles, "
             f"{idioms_imported} idioms, {masters_imported} masters imported "
             f"(is_placeholder=False)."
+        ))
+
+    def _dry_run(self, plugin_data_dir: Path, skip_masters: bool) -> None:
+        """Load + validate each catalog, print counts, no DB writes."""
+        def _count(path: Path, key: str, required: bool = True) -> int:
+            if not path.is_file():
+                if required:
+                    self.stdout.write(self.style.WARNING(
+                        f"  {path.name} missing — would skip (would FAIL if required)."
+                    ))
+                return 0
+            doc = self._load_and_validate(path, "v1", required=required)
+            return len(doc.get(key) or [])
+
+        self.stdout.write(self.style.WARNING(
+            "==== DRY RUN — no DB writes ===="
+        ))
+        n_styles = _count(plugin_data_dir / "styles.json", "styles")
+        self.stdout.write(f"  styles.json: {n_styles} entries")
+        n_idioms = _count(plugin_data_dir / "idioms.json", "idioms")
+        self.stdout.write(f"  idioms.json: {n_idioms} entries")
+        if skip_masters:
+            self.stdout.write("  masters.json: skipped via --skip-masters")
+        else:
+            n_masters = _count(
+                plugin_data_dir / "masters.json", "masters", required=False,
+            )
+            self.stdout.write(f"  masters.json: {n_masters} entries")
+        self.stdout.write(self.style.WARNING(
+            "==== END DRY RUN ===="
         ))
 
     # ---- per-catalog -----------------------------------------------------
