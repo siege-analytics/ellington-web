@@ -1,0 +1,177 @@
+{% extends "charts/base.html" %}
+
+{% block title %}{{ song.title }} — fires — Ellington{% endblock %}
+
+{% block content %}
+<style>
+  /* song-fires-specific surfaces; common chrome lives in brand.css */
+  .fires-header { margin-bottom: 1.5em; }
+  .fires-header .lede { color: var(--fg-muted); font-size: var(--text-sm); }
+
+  .section-block { margin: 1.5em 0; }
+  .section-block > summary {
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    padding: 0.3em 0;
+    border-bottom: 1px solid var(--bg-border);
+    user-select: none;
+  }
+  .section-block > summary::-webkit-details-marker { color: var(--fg-muted); }
+
+  .slice-block { margin: 1em 0 1.5em; }
+  .slice-block .slice-head {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+    margin-bottom: 0.6em;
+    padding: 0.25em 0.5em;
+    background: var(--bg);
+    border-radius: 4px;
+    display: inline-block;
+  }
+  .slice-block .slice-head .chord {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    color: var(--fg);
+    font-weight: 600;
+    margin-right: 0.4em;
+  }
+
+  /* Reuse rule-token visuals from rule_library (#175) — same shape,
+     same field set. Local copy here for now; future #170 follow-up
+     could lift these into brand.css partials. */
+  .rule-token {
+    background: var(--bg-elev); border: 1px solid var(--bg-border);
+    border-radius: 6px; padding: 0.7em 1em; margin: 0.4em 0;
+    border-left: 4px solid var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .rule-token--strong-recommend { border-left-color: var(--preference-strong-recommend); }
+  .rule-token--weak-recommend   { border-left-color: var(--preference-weak-recommend); }
+  .rule-token--neutral          { border-left-color: var(--preference-neutral); }
+  .rule-token--weak-avoid       { border-left-color: var(--preference-weak-avoid); }
+  .rule-token--strong-avoid     { border-left-color: var(--preference-strong-avoid); }
+
+  .rule-token .name {
+    font-weight: 600;
+    margin: 0 0 0.3em;
+  }
+  .rule-token .name a { color: var(--fg); text-decoration: none; }
+  .rule-token .name a:hover { text-decoration: underline; }
+
+  .rule-token .meta {
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    margin-bottom: 0.4em;
+  }
+
+  .rule-token .anchor-quote {
+    background: var(--bg);
+    border-left: 3px solid var(--chord-maj7);
+    padding: 0.3em 0.6em; margin: 0.4em 0;
+    font-style: italic; font-size: var(--text-xs);
+  }
+
+  .matched-dims {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    margin-top: 0.3em;
+  }
+  .matched-dims .dim-pill {
+    background: var(--bg-border);
+    border-radius: 8px;
+    padding: 0.05em 0.45em;
+    margin-right: 0.25em;
+  }
+
+  .pref-pill {
+    display: inline-block; padding: 0.05em 0.45em;
+    border-radius: 8px; font-size: var(--text-xs);
+    font-weight: 700; font-family: var(--font-mono);
+    margin-left: 0.4em;
+  }
+  .pref-pill[data-pref="-2"] { background: var(--verdict-reject-bg);    color: var(--verdict-reject); }
+  .pref-pill[data-pref="-1"] { background: var(--bg-border);             color: var(--chord-min7b5); }
+  .pref-pill[data-pref="0"]  { background: var(--bg-border);             color: var(--fg-muted); }
+  .pref-pill[data-pref="1"]  { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
+  .pref-pill[data-pref="2"]  { background: var(--verdict-accept-bg);    color: var(--verdict-accept); }
+</style>
+
+<div class="fires-header">
+  <h1>{{ song.title }}</h1>
+  <p class="lede">
+    {{ total_fires }} rule{{ total_fires|pluralize }} fire across this chart from {{ rule_count }} active rule{{ rule_count|pluralize }} in the corpus.
+    {% if song.key %}Key: <code>{{ song.key }}</code>.{% endif %}
+    {% if song.time_signature %}Time: <code>{{ song.time_signature }}</code>.{% endif %}
+  </p>
+</div>
+
+{% if sections %}
+  {% for section_label, section in sections.items %}
+    <details class="section-block" open>
+      <summary>{{ section_label }} <small>({{ section.fire_count }} fire{{ section.fire_count|pluralize }})</small></summary>
+
+      {% for slice in section.slices %}
+        <div class="slice-block">
+          <div class="slice-head">
+            <span class="chord">{{ slice.target_chord }}</span>
+            <span>beat {{ slice.beat_in_measure }} · <code>{{ slice.chord_quality }}</code></span>
+          </div>
+
+          {% for token in slice.tokens %}
+            {% with p=token.payload %}
+              <article class="rule-token
+                {% if p.preference == 2 %}rule-token--strong-recommend
+                {% elif p.preference == 1 %}rule-token--weak-recommend
+                {% elif p.preference == 0 %}rule-token--neutral
+                {% elif p.preference == -1 %}rule-token--weak-avoid
+                {% elif p.preference == -2 %}rule-token--strong-avoid
+                {% endif %}">
+
+                <div class="name">
+                  <a href="{% url 'rule_review:rule_detail' token.id %}">{{ p.name }}</a>
+                  <span class="pref-pill" data-pref="{{ p.preference }}">
+                    {% if p.preference == 2 %}+2
+                    {% elif p.preference == 1 %}+1
+                    {% elif p.preference == 0 %}0
+                    {% elif p.preference == -1 %}-1
+                    {% elif p.preference == -2 %}-2
+                    {% endif %}
+                  </span>
+                </div>
+
+                <div class="meta">
+                  {{ p.master_name }} · <code>{{ p.rule_id }}</code>
+                </div>
+
+                {% if p.anchor %}
+                  <div class="anchor-quote">{{ p.anchor }}</div>
+                {% endif %}
+
+                {% if p.matched_dimensions %}
+                  <div class="matched-dims">
+                    matched:
+                    {% for key, value in p.matched_dimensions.items %}
+                      <span class="dim-pill">{{ key }}={{ value }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </article>
+            {% endwith %}
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </details>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    {% if rule_count == 0 %}
+      No active rules in the corpus yet — run the catalog sync.
+    {% else %}
+      No rules fire against this chart. Either the chart has no chord events, or the corpus rules don't match its quality / arrangement profile.
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}
