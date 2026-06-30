@@ -23,6 +23,11 @@ urlpatterns = [
         name="confirm_rule",
     ),
     path("queue/", views.admin_queue, name="admin_queue"),
+    path(
+        "confirmation-queue/",
+        views.confirmation_queue,
+        name="confirmation_queue",
+    ),
     path("comments/add/", views.add_rule_comment, name="add_rule_comment"),
     path(
         "comments/<int:comment_pk>/delete/",

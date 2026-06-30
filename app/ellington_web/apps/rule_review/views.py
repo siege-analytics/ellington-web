@@ -16,7 +16,7 @@ from itertools import groupby
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, F, Q
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -474,4 +474,116 @@ def rule_library(request: HttpRequest) -> HttpResponse:
         "filter_master": master_slug,
         "filter_q": q,
         "default_open": default_open,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Confirmation queue — admin batch triage of PedagogueConfirmation signal
+# (#186 Phase 3). Mirror of admin_queue but built on confirmations, not
+# verdicts. Surfaces aggregate signal for editorial decisions at scale.
+# ---------------------------------------------------------------------------
+
+
+CONFIRMATION_SORT_CHOICES = {
+    "lowest_confidence",
+    "most_voicing_disagreement",
+    "most_naming_disagreement",
+    "most_lesson_disagreement",
+    "most_confirmations",
+}
+
+
+@login_required
+def confirmation_queue(request: HttpRequest) -> HttpResponse:
+    """Admin batch triage of pedagogue confirmation signal.
+
+    Surfaces rules ordered by various confirmation-density metrics so
+    the maintainer can pick which rules to re-investigate without
+    clicking into each one. Per #186 Phase 3.
+    """
+    if not is_admin(request.user):
+        return HttpResponseForbidden("Admin role required.")
+
+    qs = (
+        EngineRule.objects.filter(is_active=True)
+        .select_related("master")
+        .annotate(
+            confirmation_count=Count("confirmations", distinct=True),
+            voicing_yes=Count(
+                "confirmations",
+                filter=Q(confirmations__voicing_confirmed=True),
+                distinct=True,
+            ),
+            voicing_no=Count(
+                "confirmations",
+                filter=Q(confirmations__voicing_confirmed=False),
+                distinct=True,
+            ),
+            naming_yes=Count(
+                "confirmations",
+                filter=Q(confirmations__naming_confirmed=True),
+                distinct=True,
+            ),
+            naming_no=Count(
+                "confirmations",
+                filter=Q(confirmations__naming_confirmed=False),
+                distinct=True,
+            ),
+            lesson_yes=Count(
+                "confirmations",
+                filter=Q(confirmations__lesson_confirmed=True),
+                distinct=True,
+            ),
+            lesson_no=Count(
+                "confirmations",
+                filter=Q(confirmations__lesson_confirmed=False),
+                distinct=True,
+            ),
+            avg_confidence=Avg("confirmations__overall_confidence"),
+        )
+        .filter(confirmation_count__gt=0)
+    )
+
+    master_slug = (request.GET.get("master") or "").strip()
+    if master_slug:
+        qs = qs.filter(master__slug=master_slug)
+
+    axis = (request.GET.get("axis") or "").strip()
+    if axis == "voicing":
+        qs = qs.filter(Q(voicing_yes__gt=0) | Q(voicing_no__gt=0))
+    elif axis == "naming":
+        qs = qs.filter(Q(naming_yes__gt=0) | Q(naming_no__gt=0))
+    elif axis == "lesson":
+        qs = qs.filter(Q(lesson_yes__gt=0) | Q(lesson_no__gt=0))
+
+    sort = (request.GET.get("sort") or "lowest_confidence").strip()
+    if sort not in CONFIRMATION_SORT_CHOICES:
+        sort = "lowest_confidence"
+
+    if sort == "lowest_confidence":
+        qs = qs.order_by(F("avg_confidence").asc(nulls_last=True), "rule_id")
+    elif sort == "most_voicing_disagreement":
+        qs = qs.filter(voicing_yes__gt=0, voicing_no__gt=0).annotate(
+            voicing_total=F("voicing_yes") + F("voicing_no"),
+        ).order_by("-voicing_total", "rule_id")
+    elif sort == "most_naming_disagreement":
+        qs = qs.filter(naming_yes__gt=0, naming_no__gt=0).annotate(
+            naming_total=F("naming_yes") + F("naming_no"),
+        ).order_by("-naming_total", "rule_id")
+    elif sort == "most_lesson_disagreement":
+        qs = qs.filter(lesson_yes__gt=0, lesson_no__gt=0).annotate(
+            lesson_total=F("lesson_yes") + F("lesson_no"),
+        ).order_by("-lesson_total", "rule_id")
+    elif sort == "most_confirmations":
+        qs = qs.order_by("-confirmation_count", "rule_id")
+
+    paginator = Paginator(qs, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    return render(request, "rule_review/confirmation_queue.html", {
+        "page_obj": page_obj,
+        "filter_master": master_slug,
+        "filter_axis": axis,
+        "filter_sort": sort,
+        "sort_choices": sorted(CONFIRMATION_SORT_CHOICES),
     })

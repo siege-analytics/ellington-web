@@ -612,3 +612,130 @@ class ConfirmRuleViewTests(TestCase):
         self.assertFalse(
             PedagogueConfirmation.objects.filter(rule=self.rule).exists(),
         )
+
+
+# ---------------------------------------------------------------------------
+# Confirmation queue (#186 Phase 3)
+# ---------------------------------------------------------------------------
+
+
+class ConfirmationQueueViewTests(TestCase):
+    def setUp(self):
+        self.bundle = _make_bundle()
+        self.master = Master.objects.create(slug="joe-pass", name="Joe Pass")
+        self.rule_a = _make_rule(
+            self.bundle, self.master,
+            work_id="w1", rule_id="r-a", name="rule A",
+        )
+        self.rule_b = _make_rule(
+            self.bundle, self.master,
+            work_id="w1", rule_id="r-b", name="rule B",
+        )
+        self.rule_untouched = _make_rule(
+            self.bundle, self.master,
+            work_id="w1", rule_id="r-z", name="rule untouched",
+        )
+        self.ped_a = _make_pedagogue("alpha")
+        self.ped_b = _make_pedagogue("beta")
+        self.ped_c = _make_pedagogue("gamma")
+        self.admin = User.objects.create_user(
+            username="admin", password=secrets.token_urlsafe(16),
+            is_staff=True,
+        )
+        self.stranger = User.objects.create_user(
+            username="stranger", password=secrets.token_urlsafe(16),
+        )
+
+        # rule_a: high confidence, all-yes on voicing+naming+lesson
+        PedagogueConfirmation.objects.create(
+            rule=self.rule_a, user=self.ped_a,
+            voicing_confirmed=True, naming_confirmed=True, lesson_confirmed=True,
+            overall_confidence=5,
+        )
+        PedagogueConfirmation.objects.create(
+            rule=self.rule_a, user=self.ped_b,
+            voicing_confirmed=True, naming_confirmed=True, lesson_confirmed=True,
+            overall_confidence=5,
+        )
+
+        # rule_b: lower confidence, voicing disagreement
+        PedagogueConfirmation.objects.create(
+            rule=self.rule_b, user=self.ped_a,
+            voicing_confirmed=True, naming_confirmed=False, lesson_confirmed=False,
+            overall_confidence=2,
+        )
+        PedagogueConfirmation.objects.create(
+            rule=self.rule_b, user=self.ped_b,
+            voicing_confirmed=False, naming_confirmed=False, lesson_confirmed=True,
+            overall_confidence=3,
+        )
+        PedagogueConfirmation.objects.create(
+            rule=self.rule_b, user=self.ped_c,
+            voicing_confirmed=True, naming_confirmed=False, lesson_confirmed=True,
+            overall_confidence=None,
+        )
+        # rule_untouched has no confirmations — should never appear
+
+    def test_admin_only(self):
+        self.client.force_login(self.stranger)
+        response = self.client.get(reverse("rule_review:confirmation_queue"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_excludes_untouched_rules(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("rule_review:confirmation_queue"))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "rule untouched")
+
+    def test_lowest_confidence_sort_default(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("rule_review:confirmation_queue"))
+        # rule_b avg = (2+3)/2 = 2.5 (NULL ignored); rule_a avg = 5
+        # Lowest-confidence default puts B before A.
+        rules = list(response.context["page_obj"].object_list)
+        names = [r.name for r in rules]
+        self.assertEqual(names.index("rule B") < names.index("rule A"), True)
+
+    def test_voicing_disagreement_sort(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("rule_review:confirmation_queue")
+            + "?sort=most_voicing_disagreement"
+        )
+        # rule_a has no voicing_no, so it's filtered out of this sort
+        rules = list(response.context["page_obj"].object_list)
+        names = [r.name for r in rules]
+        self.assertIn("rule B", names)
+        self.assertNotIn("rule A", names)
+
+    def test_axis_filter_voicing(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("rule_review:confirmation_queue") + "?axis=voicing"
+        )
+        rules = list(response.context["page_obj"].object_list)
+        # Both rules touched the voicing axis
+        names = [r.name for r in rules]
+        self.assertIn("rule A", names)
+        self.assertIn("rule B", names)
+
+    def test_invalid_sort_falls_back_to_default(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("rule_review:confirmation_queue") + "?sort=garbage"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["filter_sort"], "lowest_confidence")
+
+    def test_annotations_present(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("rule_review:confirmation_queue"))
+        rule_b = next(
+            r for r in response.context["page_obj"].object_list
+            if r.name == "rule B"
+        )
+        self.assertEqual(rule_b.voicing_yes, 2)
+        self.assertEqual(rule_b.voicing_no, 1)
+        self.assertEqual(rule_b.naming_yes, 0)
+        self.assertEqual(rule_b.naming_no, 3)
+        self.assertEqual(rule_b.confirmation_count, 3)
