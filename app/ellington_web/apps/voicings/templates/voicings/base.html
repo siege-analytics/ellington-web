@@ -1,0 +1,41 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}Voicings — Ellington{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <style>
+    body { max-width: 1080px; margin: 2em auto; padding: 0 1em; font-family: var(--font-body); }
+    nav { border-bottom: 1px solid var(--bg-border); padding-bottom: 0.5em; margin-bottom: 1.5em; }
+    nav a { margin-right: 1em; }
+    h1 { margin-top: 0.5em; font-family: var(--font-display); }
+    .voicing-grid {
+      display: grid; gap: 1em;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+    .voicing-card {
+      border: 1px solid var(--bg-border); border-radius: 4px;
+      padding: 0.75em; background: var(--bg-elev); text-align: center;
+    }
+    .voicing-card a { text-decoration: none; color: inherit; }
+    .voicing-card .name { font-weight: bold; font-size: 0.9em; margin-bottom: 0.4em; }
+    .voicing-card .meta { color: var(--fg-muted); font-size: 0.8em; }
+    .fretboard { color: var(--fg-primary); display: block; margin: 0 auto; }
+    .filters { margin-bottom: 1em; display: flex; gap: 1em; flex-wrap: wrap; }
+    .filters select { padding: 0.3em; }
+    .pagination { margin-top: 1.5em; }
+    .pagination a, .pagination span { margin: 0 0.3em; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="{% url 'voicings:voicing_list' %}">Voicings</a>
+    <a href="{% url 'rule_review:rule_library' %}">Rule library</a>
+    {% if user.is_authenticated %}
+      <span style="float:right">Signed in as <strong>{{ user.username }}</strong></span>
+    {% endif %}
+  </nav>
+  {% block content %}{% endblock %}
+</body>
+</html>
