@@ -152,3 +152,28 @@ class PedagogueGroupSyncTests(TestCase):
 
         after = set(user.groups.values_list("name", flat=True))
         self.assertEqual(before, after)
+
+
+# ---------------------------------------------------------------------------
+# #198 — MasterProfilePage
+# ---------------------------------------------------------------------------
+
+
+class MasterProfilePageTests(TestCase):
+    """Joe Pass page is seeded by migration 0004 and renders with shell."""
+
+    def test_joe_pass_page_renders(self):
+        response = self.client.get("/masters/joe-pass/")
+        # 200 if Wagtail's site middleware found the page; 404 if seed
+        # didn't run (which would be a migration bug).
+        self.assertEqual(response.status_code, 200, response.content[:200])
+        self.assertContains(response, "Joe Pass")
+
+    def test_masters_index_renders(self):
+        response = self.client.get("/masters/")
+        self.assertEqual(response.status_code, 200, response.content[:200])
+        self.assertContains(response, "Joe Pass")
+
+    def test_master_profile_carries_shell(self):
+        response = self.client.get("/masters/joe-pass/")
+        self.assertContains(response, 'id="ellington-nav"')

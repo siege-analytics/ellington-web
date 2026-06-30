@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load wagtailcore_tags wagtailimages_tags %}
+
+{% block title %}{{ page.master.name }} — Ellington{% endblock %}
+
+{% block content %}
+{% if page.hero_image %}
+  {% image page.hero_image fill-960x320 as hero %}
+  <img src="{{ hero.url }}" alt="" class="master-hero">
+{% endif %}
+
+<h1>{{ page.master.name }}</h1>
+<p class="meta">{{ page.intro|default:page.master.summary }}</p>
+
+<div class="master-body">
+  {% for block in page.body %}
+    {{ block }}
+  {% endfor %}
+</div>
+
+<p class="meta">
+  <a href="{% pageurl page.get_parent %}">← all masters</a>
+</p>
+{% endblock %}
