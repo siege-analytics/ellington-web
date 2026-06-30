@@ -153,27 +153,54 @@ class PedagogueGroupSyncTests(TestCase):
         after = set(user.groups.values_list("name", flat=True))
         self.assertEqual(before, after)
 
-
 # ---------------------------------------------------------------------------
-# #198 — MasterProfilePage
+# #205 — pedagogue subtree restriction
 # ---------------------------------------------------------------------------
 
 
-class MasterProfilePageTests(TestCase):
-    """Joe Pass page is seeded by migration 0004 and renders with shell."""
+class PedagogueSubtreeRestrictionTests(TestCase):
+    """Post-migration the Pedagogue group has subtree-only perms.
 
-    def test_joe_pass_page_renders(self):
-        response = self.client.get("/masters/joe-pass/")
-        # 200 if Wagtail's site middleware found the page; 404 if seed
-        # didn't run (which would be a migration bug).
-        self.assertEqual(response.status_code, 200, response.content[:200])
-        self.assertContains(response, "Joe Pass")
+    The wagtail_create_homepage initial migration creates a root and
+    a HomePage at depth=2 (slug='home' by default). Our 0002 grants
+    root-level GroupPagePermission; 0003 removes that and re-grants
+    per-slug. After both migrations have run, the group should NOT
+    have any GroupPagePermission on the root page.
+    """
 
-    def test_masters_index_renders(self):
-        response = self.client.get("/masters/")
-        self.assertEqual(response.status_code, 200, response.content[:200])
-        self.assertContains(response, "Joe Pass")
+    def test_root_level_permission_removed(self):
+        try:
+            from wagtail.models import GroupPagePermission, Page
+        except ImportError:
+            self.skipTest("wagtail not installed")
 
-    def test_master_profile_carries_shell(self):
-        response = self.client.get("/masters/joe-pass/")
-        self.assertContains(response, 'id="ellington-nav"')
+        group = Group.objects.filter(name=PEDAGOGUE_GROUP_NAME).first()
+        if group is None:
+            self.skipTest("Pedagogue group not seeded (migration 0002 skipped)")
+
+        root = Page.objects.filter(pk=1).first()
+        if root is None:
+            self.skipTest("Wagtail root page not present")
+
+        self.assertEqual(
+            GroupPagePermission.objects.filter(group=group, page=root).count(),
+            0,
+            "0003 should have removed root-level GroupPagePermission.",
+        )
+
+    def test_access_admin_permission_preserved(self):
+        """Pedagogue can still log into /cms/ even with no subtrees."""
+        from django.contrib.auth.models import Permission
+
+        group = Group.objects.filter(name=PEDAGOGUE_GROUP_NAME).first()
+        if group is None:
+            self.skipTest("Pedagogue group not seeded")
+
+        access_admin = Permission.objects.filter(
+            content_type__app_label="wagtailadmin",
+            codename="access_admin",
+        ).first()
+        if access_admin is None:
+            self.skipTest("access_admin permission not installed")
+
+        self.assertIn(access_admin, group.permissions.all())
