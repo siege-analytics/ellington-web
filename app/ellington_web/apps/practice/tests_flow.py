@@ -302,3 +302,171 @@ class TestPracticeFlowViews(TestCase):
     def tearDownClass(cls) -> None:
         super().tearDownClass()
         shutil.rmtree(TEST_MEDIA_ROOT, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# #244 — bank picker + render_backing dispatch
+# ---------------------------------------------------------------------------
+
+
+from unittest import mock as _mock_244  # noqa: E402
+
+from apps.audio.models import BankFormat, BankSourceApp, SoundBank  # noqa: E402
+
+
+def _make_bank(name: str = "TestBank.sf3", active: bool = True) -> SoundBank:
+    return SoundBank.objects.create(
+        source_app=BankSourceApp.MUSESCORE,
+        name=name,
+        format=BankFormat.SF3,
+        path=f"/fake/{name}",
+        size_bytes=1024,
+        sha256="d" * 64 if name == "TestBank.sf3" else "e" * 64,
+        is_active=active,
+    )
+
+
+@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
+class PracticeSessionFormBankPickerTests(TestCase):
+    def setUp(self):
+        self.user = _make_user(username="bank-tester")
+        self.song = _make_song()
+        self.preset = _make_preset()
+        self.bank = _make_bank()
+
+    def _form_data(self, **overrides):
+        data = {
+            "song": self.song.pk,
+            "target_preset": self.preset.pk,
+            "tempo_bpm": 140,
+            "notes": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_bank_picker_only_lists_active(self):
+        inactive = _make_bank(name="Inactive.sf3", active=False)
+        form = PracticeSessionForm()
+        choices = list(form.fields["bank"].queryset.values_list("pk", flat=True))
+        self.assertIn(self.bank.pk, choices)
+        self.assertNotIn(inactive.pk, choices)
+
+    def test_bank_optional_form_valid_without_it(self):
+        form = PracticeSessionForm(
+            data=self._form_data(),
+            files={"recording": _wav_upload(body=b"no-bank")},
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_save_dispatches_render_backing_when_bank_picked(self):
+        form = PracticeSessionForm(
+            data=self._form_data(bank=self.bank.pk),
+            files={"recording": _wav_upload(body=b"with-bank")},
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        with _mock_244.patch.object(
+            form, "_dispatch_backing_render",
+        ) as dispatcher:
+            session = form.save(user=self.user)
+        dispatcher.assert_called_once()
+        kwargs = dispatcher.call_args.kwargs
+        self.assertEqual(kwargs["song"].pk, self.song.pk)
+        self.assertEqual(kwargs["bank"].pk, self.bank.pk)
+        self.assertEqual(kwargs["tempo_bpm"], 140)
+        self.assertEqual(kwargs["session"].pk, session.pk)
+
+    def test_save_does_NOT_dispatch_when_no_bank(self):
+        form = PracticeSessionForm(
+            data=self._form_data(),
+            files={"recording": _wav_upload(body=b"no-bank-2")},
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        with _mock_244.patch.object(
+            form, "_dispatch_backing_render",
+        ) as dispatcher:
+            form.save(user=self.user)
+        dispatcher.assert_not_called()
+# #252 — session detail renders AudioVerdict rows
+# ---------------------------------------------------------------------------
+
+
+class SessionDetailVerdictRenderTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.user = _make_user(username="verdict-render")
+        from django.test import Client
+        cls.client_cls = Client
+
+    def _make_session_with_recording_and_verdict(self):
+        from apps.audio.models import AudioVerdict, PolarityChoice, VerdictChoice
+
+        song = _make_song()
+        preset = _make_preset()
+        session = PracticeSession.objects.create(
+            user=self.user, song=song, target_preset=preset,
+        )
+        rec = Recording.objects.create(
+            session=session, file_ref="recordings/test.wav",
+        )
+        AudioVerdict.objects.create(
+            recording=rec,
+            slice_id="s-1", rule_id="joe-pass-001",
+            rule_polarity=PolarityChoice.POSITIVE,
+            verdict=VerdictChoice.SATISFIES,
+            evidence_type="chord_tone_membership",
+            evidence_payload={
+                "matched": 3, "total": 4,
+                "missing": ["b7"], "extra": [],
+            },
+            verdict_confidence=0.82,
+            rule_evaluability_confidence=1.0,
+        )
+        AudioVerdict.objects.create(
+            recording=rec,
+            slice_id="s-2", rule_id="bergonzi-vox",
+            rule_polarity=PolarityChoice.POSITIVE,
+            verdict=VerdictChoice.NEUTRAL,
+            evidence_type="deferred",
+            evidence_payload={
+                "reason": "voicing-shape eval requires basic_pitch",
+                "deferred_until_version": "v0.2",
+            },
+            verdict_confidence=0.0,
+            rule_evaluability_confidence=0.0,
+        )
+        return session
+
+    def test_detail_renders_verdict_block(self):
+        session = self._make_session_with_recording_and_verdict()
+        client = self.client_cls()
+        client.force_login(self.user)
+        response = client.get(reverse("practice:session_detail", args=[session.id]))
+        self.assertEqual(response.status_code, 200)
+        text = response.content.decode("utf-8")
+        # Block header + count badge
+        self.assertIn("Audio verdicts", text)
+        self.assertIn("2 total", text)
+        # Verdict-row content
+        self.assertIn("Satisfies", text)
+        self.assertIn("Neutral", text)
+        self.assertIn("3 / 4 chord tones matched", text)
+        self.assertIn("missing: b7", text)
+        # Deferred reason rendered
+        self.assertIn("voicing-shape eval requires basic_pitch", text)
+
+    def test_detail_hides_block_when_no_verdicts(self):
+        song = _make_song()
+        preset = _make_preset()
+        session = PracticeSession.objects.create(
+            user=self.user, song=song, target_preset=preset,
+        )
+        Recording.objects.create(
+            session=session, file_ref="recordings/no-verdicts.wav",
+        )
+        client = self.client_cls()
+        client.force_login(self.user)
+        response = client.get(reverse("practice:session_detail", args=[session.id]))
+        self.assertEqual(response.status_code, 200)
+        # Block header should NOT appear
+        self.assertNotIn("Audio verdicts", response.content.decode("utf-8"))

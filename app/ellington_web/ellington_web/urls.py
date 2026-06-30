@@ -43,6 +43,7 @@ urlpatterns = [
     path("practice/", include("apps.practice.urls")),
     path("charts/", include("apps.charts.urls")),
     path("rule-review/", include("apps.rule_review.urls")),
+    path("voicings/", include("apps.voicings.urls")),
     # Wagtail admin + document serving. Mounted before the catch-all
     # so /cms/ and /documents/ resolve to Wagtail's own URLs.
     path("cms/", include(wagtailadmin_urls)),
