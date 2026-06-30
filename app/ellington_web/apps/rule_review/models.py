@@ -193,7 +193,122 @@ class RuleComment(models.Model):
         return "[deleted]" if self.is_deleted else self.body
 
 
+# ---------------------------------------------------------------------------
+# PedagogueConfirmation — per-axis correctness signal (#186)
+# ---------------------------------------------------------------------------
+
+
+class PedagogueConfirmation(models.Model):
+    """One pedagogue's per-axis correctness confirmation on one EngineRule.
+
+    Parallel to ``Response`` (the verdict flow), capturing a DIFFERENT
+    signal: not "accept/reject the rule as a whole" but "is the rule's
+    voicing recommendation correct, is its quality-binding naming
+    correct, is its anchor + falsifier sound as a pedagogical lesson?"
+
+    The three axes are independent. A pedagogue may confirm the lesson
+    is sound while flagging that the voicing recommendation feels off
+    — that's signal corpus-distillation can't extract from a single-
+    axis verdict.
+
+    Unique per (rule, user); revisable via update_or_create, same edit
+    semantics as Response. Pedagogue-only write (rule_review:rule_detail
+    enforces); any signed-in user can read their own.
+
+    Per ticket #186 Phase 1 — Phase 2 (voicings ingest + fretboard
+    render) will give the voicing_confirmed checkbox a visual referent.
+    """
+
+    rule = models.ForeignKey(
+        "engine_rules.EngineRule",
+        on_delete=models.CASCADE,
+        related_name="confirmations",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="rule_confirmations",
+        help_text="The pedagogue who confirmed. PROTECT — sentinel-"
+        "anonymize on user delete to preserve corpus signal.",
+    )
+
+    voicing_confirmed = models.BooleanField(
+        default=False,
+        help_text="Is the rule's then_action voicing recommendation"
+        " correct for its quality_binding context?",
+    )
+    voicing_note = models.TextField(
+        blank=True,
+        help_text="Optional disagreement / clarification on the"
+        " voicing axis. Empty when voicing_confirmed = True with no"
+        " caveats.",
+    )
+
+    naming_confirmed = models.BooleanField(
+        default=False,
+        help_text="Is the rule's quality_binding canonical token"
+        " correctly classifying the chord context the rule is about?",
+    )
+    naming_note = models.TextField(blank=True)
+
+    lesson_confirmed = models.BooleanField(
+        default=False,
+        help_text="Does the anchor quote faithfully support the rule"
+        " and is the falsifier pedagogically sound?",
+    )
+    lesson_note = models.TextField(blank=True)
+
+    overall_confidence = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="1-5 Likert: how sound is this rule as a complete"
+        " pedagogical unit? Null = no opinion expressed.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rule", "user"],
+                name="pedagogueconfirmation_rule_user_unique",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(overall_confidence__isnull=True)
+                    | models.Q(overall_confidence__range=(1, 5))
+                ),
+                name="pedagogueconfirmation_confidence_range",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["rule", "voicing_confirmed",
+                        "naming_confirmed", "lesson_confirmed"],
+                name="pedconf_rule_axes_idx",
+            ),
+            models.Index(
+                fields=["user", "-updated_at"],
+                name="pedconf_user_recent_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        axes = "".join([
+            "V" if self.voicing_confirmed else "v",
+            "N" if self.naming_confirmed else "n",
+            "L" if self.lesson_confirmed else "l",
+        ])
+        return (
+            f"PedagogueConfirmation(rule={self.rule_id} "
+            f"user={self.user_id} [{axes}] conf={self.overall_confidence})"
+        )
+
+
 __all__ = [
+    "PedagogueConfirmation",
     "RejectionAxis",
     "Response",
     "RuleComment",

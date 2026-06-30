@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.practice",
     "apps.engine_rules",
     "apps.rule_review",
+    "apps.voicings",
     "apps.audio",
     # Wagtail (#190 epic / #191 spike). Order matters: contrib + core
     # before our cms app. Wagtail's modelcluster + taggit are
