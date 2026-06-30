@@ -305,6 +305,87 @@ class TestPracticeFlowViews(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# #244 — bank picker + render_backing dispatch
+# ---------------------------------------------------------------------------
+
+
+from unittest import mock as _mock_244  # noqa: E402
+
+from apps.audio.models import BankFormat, BankSourceApp, SoundBank  # noqa: E402
+
+
+def _make_bank(name: str = "TestBank.sf3", active: bool = True) -> SoundBank:
+    return SoundBank.objects.create(
+        source_app=BankSourceApp.MUSESCORE,
+        name=name,
+        format=BankFormat.SF3,
+        path=f"/fake/{name}",
+        size_bytes=1024,
+        sha256="d" * 64 if name == "TestBank.sf3" else "e" * 64,
+        is_active=active,
+    )
+
+
+@override_settings(MEDIA_ROOT=TEST_MEDIA_ROOT)
+class PracticeSessionFormBankPickerTests(TestCase):
+    def setUp(self):
+        self.user = _make_user(username="bank-tester")
+        self.song = _make_song()
+        self.preset = _make_preset()
+        self.bank = _make_bank()
+
+    def _form_data(self, **overrides):
+        data = {
+            "song": self.song.pk,
+            "target_preset": self.preset.pk,
+            "tempo_bpm": 140,
+            "notes": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_bank_picker_only_lists_active(self):
+        inactive = _make_bank(name="Inactive.sf3", active=False)
+        form = PracticeSessionForm()
+        choices = list(form.fields["bank"].queryset.values_list("pk", flat=True))
+        self.assertIn(self.bank.pk, choices)
+        self.assertNotIn(inactive.pk, choices)
+
+    def test_bank_optional_form_valid_without_it(self):
+        form = PracticeSessionForm(
+            data=self._form_data(),
+            files={"recording": _wav_upload(body=b"no-bank")},
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_save_dispatches_render_backing_when_bank_picked(self):
+        form = PracticeSessionForm(
+            data=self._form_data(bank=self.bank.pk),
+            files={"recording": _wav_upload(body=b"with-bank")},
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        with _mock_244.patch.object(
+            form, "_dispatch_backing_render",
+        ) as dispatcher:
+            session = form.save(user=self.user)
+        dispatcher.assert_called_once()
+        kwargs = dispatcher.call_args.kwargs
+        self.assertEqual(kwargs["song"].pk, self.song.pk)
+        self.assertEqual(kwargs["bank"].pk, self.bank.pk)
+        self.assertEqual(kwargs["tempo_bpm"], 140)
+        self.assertEqual(kwargs["session"].pk, session.pk)
+
+    def test_save_does_NOT_dispatch_when_no_bank(self):
+        form = PracticeSessionForm(
+            data=self._form_data(),
+            files={"recording": _wav_upload(body=b"no-bank-2")},
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        with _mock_244.patch.object(
+            form, "_dispatch_backing_render",
+        ) as dispatcher:
+            form.save(user=self.user)
+        dispatcher.assert_not_called()
 # #252 — session detail renders AudioVerdict rows
 # ---------------------------------------------------------------------------
 
