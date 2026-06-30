@@ -113,7 +113,24 @@ def session_detail(request: HttpRequest, pk: int) -> HttpResponse:
         pk=pk,
         user=request.user,
     )
-    recordings = list(session.recordings.all())
+    # Prefetch audio_verdicts so the template can render verdict
+    # groups per recording without per-row queries. #252.
+    from apps.audio.models import AudioVerdict, VerdictChoice
+    recordings = list(
+        session.recordings.prefetch_related(
+            Prefetch(
+                "audio_verdicts",
+                queryset=AudioVerdict.objects.order_by("slice_id", "rule_id"),
+            )
+        )
+    )
+    # Per-recording verdict count rollups for the section header.
+    recording_verdict_summary: dict[int, dict[str, int]] = {}
+    for rec in recordings:
+        summary = {v.value: 0 for v in VerdictChoice}
+        for verdict in rec.audio_verdicts.all():
+            summary[verdict.verdict] = summary.get(verdict.verdict, 0) + 1
+        recording_verdict_summary[rec.pk] = summary
 
     # Walk the song's chord progression in play order. Prefetch the
     # whole tree with the sort orders applied at the queryset level so
@@ -163,6 +180,7 @@ def session_detail(request: HttpRequest, pk: int) -> HttpResponse:
             "session": session,
             "recordings": recordings,
             "chord_rows": chord_rows,
+            "recording_verdict_summary": recording_verdict_summary,
         },
     )
 

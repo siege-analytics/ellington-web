@@ -1,84 +1,14 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Practice — Ellington{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
-  <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 960px;
-      margin: 2em auto;
-      padding: 0 1em;
-      color: #222;
-      line-height: 1.5;
-    }
-    nav { border-bottom: 1px solid #ccc; padding-bottom: 0.5em; margin-bottom: 1.5em; }
-    nav a { margin-right: 1em; }
-    h1 { margin-top: 0.5em; }
-    .messages { list-style: none; padding: 0; }
-    .messages li { background: #eef; padding: 0.5em 1em; border-left: 3px solid #66f; margin-bottom: 0.5em; }
-    .messages li.error { background: #fee; border-left-color: #f66; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { text-align: left; padding: 0.4em 0.6em; border-bottom: 1px solid #eee; }
-    .empty-state { padding: 2em; text-align: center; color: #888; }
-    .chord-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5em; font-family: monospace; }
-    .chord-grid .measure {
-      padding: 0.5em;
-      background: #f8f8f8;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-    }
-    .chord-grid .section-break {
-      grid-column: 1 / -1;
-      background: #444;
-      color: white;
-      padding: 0.25em 0.5em;
-      font-weight: bold;
-      border-radius: 4px;
-    }
-    .errorlist { color: #c33; padding-left: 1.2em; }
-    .helptext { color: #666; font-size: 0.9em; display: block; margin-top: 0.2em; }
-    button, input[type="submit"] {
-      padding: 0.5em 1em;
-      background: #336;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-    }
-    button.destructive { background: #933; }
-    form p { margin: 1em 0; }
-    form label { display: block; font-weight: bold; margin-bottom: 0.2em; }
-    form input, form select, form textarea {
-      width: 100%;
-      padding: 0.4em;
-      border: 1px solid #aaa;
-      border-radius: 3px;
-      font: inherit;
-    }
-  </style>
-</head>
-<body>
-  <nav>
-    <a href="{% url 'practice:session_list' %}">My sessions</a>
-    <a href="{% url 'practice:session_new' %}">+ New session</a>
-    {% if user.is_authenticated %}
-      <span style="float:right">Signed in as <strong>{{ user.username }}</strong></span>
-    {% endif %}
-  </nav>
+{% extends "base.html" %}
 
-  {% if messages %}
-    <ul class="messages">
-      {% for message in messages %}
-        <li class="{{ message.tags }}">{{ message }}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
+{% block title %}Practice — Ellington{% endblock %}
 
-  {% block content %}{% endblock %}
-</body>
-</html>
+{% block extra_head %}
+<script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+{% endblock %}
+
+{% block sub_nav %}
+<nav class="sub-nav">
+  <a href="{% url 'practice:session_list' %}">My sessions</a>
+  <a href="{% url 'practice:session_new' %}">+ New session</a>
+</nav>
+{% endblock %}

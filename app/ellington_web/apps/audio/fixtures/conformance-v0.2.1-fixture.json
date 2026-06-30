@@ -1,0 +1,120 @@
+{
+  "_doc": "Parity oracle for firing-spec §10 (v0.2.1) — Conformance Verdict Contract. Both plugin v2 and Ellington apps.audio.comparator import this fixture and assert their evaluators produce the listed expected_rule_verdicts from the given inputs. If either side diverges, the test fails — drift becomes loud, not silent. Derived verbatim from the §10.8 worked example in plugin/docs/engine-rules-firing-spec.md.",
+  "_ratified": "2026-06-24 jointly with ellington-web#243 and plugin#595",
+  "_consumer_contract_version": "0.2.1",
+
+  "slice_observation": {
+    "_doc": "Cmaj7 slice in C major, key=I tonic. Player's monophonic recording produced 3 chord-tones in the slice window. inferred_chord_quality = null because pyin is monophonic (#242 limitation; basic_pitch upgrade enables non-null in a future fixture iteration).",
+    "slice_id": "fixture-slice-04",
+    "played_pitches": [
+      { "pitch_name": "C4",  "duration_s": 1.0, "confidence": 0.9  },
+      { "pitch_name": "E4",  "duration_s": 0.5, "confidence": 0.85 },
+      { "pitch_name": "G4",  "duration_s": 0.6, "confidence": 0.9  }
+    ],
+    "played_intervals_relative_to_root": [0, 4, 7],
+    "inferred_chord_quality": null,
+    "matched_chord_tones": 3,
+    "total_chord_tones": 4,
+    "off_chord_tones": [],
+    "off_scale_tones": [],
+    "scale_drift_semitones": 0.04,
+    "alignment_confidence": 0.92,
+    "pitch_extraction_confidence": 0.88,
+    "observation_confidence": 0.81
+  },
+
+  "fired_rules": [
+    {
+      "_doc": "Voicing-prescriptive rule. v0.1 can't evaluate (needs polyphonic detection). Produces neutral verdict + DeferredEvidence.",
+      "rule_fire_result": {
+        "rule_id": "fixture-pass-imaj7-double-root",
+        "preference": 1,
+        "polarity": "positive",
+        "then_action": { "action": "double_root_in_bass" },
+        "anchor": "Pass, Joe — Joe Pass Guitar Chords, p.12 — \"on Imaj7 in C, double the root in the bass\"",
+        "source_page": 12,
+        "matched_dimensions": { "chord_quality": "maj7", "progression.position": "I" },
+        "confidence": 1.0,
+        "applicability_reasons": []
+      },
+      "expected_rule_verdict": {
+        "slice_id": "fixture-slice-04",
+        "rule_id": "fixture-pass-imaj7-double-root",
+        "rule_polarity": "positive",
+        "verdict": "neutral",
+        "evidence": {
+          "type": "deferred",
+          "reason": "rule's then action is voicing-prescriptive; requires polyphonic pitch + voicing extraction",
+          "deferred_until_version": "v0.2"
+        },
+        "rule_evaluability_confidence": 0.0,
+        "verdict_confidence": 0.0
+      }
+    },
+    {
+      "_doc": "Chord-quality-prescriptive rule. v0.1 IS evaluable via ChordToneMembershipEvidence. Player's 3-of-4 chord-tones with no extras → satisfies on a positive rule.",
+      "rule_fire_result": {
+        "rule_id": "fixture-chart-mode-tonic-arrival",
+        "preference": 1,
+        "polarity": "positive",
+        "then_action": { "expected_chord_quality": "maj7" },
+        "anchor": "Hypothetical chart-mode rule — on a tonic-arrival slice, expect quality maj7",
+        "source_page": null,
+        "matched_dimensions": { "chord_quality": "maj7", "harmonic.context": "tonic" },
+        "confidence": 1.0,
+        "applicability_reasons": []
+      },
+      "expected_rule_verdict": {
+        "slice_id": "fixture-slice-04",
+        "rule_id": "fixture-chart-mode-tonic-arrival",
+        "rule_polarity": "positive",
+        "verdict": "satisfies",
+        "evidence": {
+          "type": "chord_tone_membership",
+          "matched": 3,
+          "total": 4,
+          "missing": ["B"],
+          "extra": []
+        },
+        "rule_evaluability_confidence": 1.0,
+        "verdict_confidence": 0.81
+      }
+    },
+    {
+      "_doc": "Scale-tone-prescriptive avoid rule. v0.1 evaluable via ScaleDriftEvidence. Player's drift is below the 0.5-semitone threshold the consumer uses, so the player did NOT do the avoided thing → satisfies on an avoid rule (avoid × didn't-do = satisfies per §10.4).",
+      "rule_fire_result": {
+        "rule_id": "fixture-avoid-chromatic-drift-on-tonic",
+        "preference": -1,
+        "polarity": "avoid",
+        "then_action": { "max_scale_drift_semitones": 0.25 },
+        "anchor": "Hypothetical scale-drift rule — on a tonic slice, avoid melodic content drifting more than 0.25 semitones from scale tones",
+        "source_page": null,
+        "matched_dimensions": { "harmonic.context": "tonic" },
+        "confidence": 1.0,
+        "applicability_reasons": ["intonation_floor"]
+      },
+      "expected_rule_verdict": {
+        "slice_id": "fixture-slice-04",
+        "rule_id": "fixture-avoid-chromatic-drift-on-tonic",
+        "rule_polarity": "avoid",
+        "verdict": "satisfies",
+        "evidence": {
+          "type": "scale_drift",
+          "median_drift_semitones": 0.04,
+          "max_drift_semitones": 0.12,
+          "drift_frame_count": 0
+        },
+        "rule_evaluability_confidence": 1.0,
+        "verdict_confidence": 0.81
+      }
+    }
+  ],
+
+  "_consumer_check_protocol": [
+    "1. Load slice_observation as SliceObservation dataclass (per §10.2 shape).",
+    "2. For each entry in fired_rules: load rule_fire_result as RuleFireResult; load expected_rule_verdict as RuleVerdict.",
+    "3. Run consumer's comparator: comparator(slice_observation, rule_fire_result) → actual_rule_verdict.",
+    "4. Assert actual_rule_verdict == expected_rule_verdict field-by-field.",
+    "5. If divergence, the consumer's evaluator has drifted from the spec; investigate field-by-field difference. Drift is loud, not silent."
+  ]
+}

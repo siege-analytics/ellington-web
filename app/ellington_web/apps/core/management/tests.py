@@ -59,3 +59,62 @@ class EnsureSuperuserTests(TestCase):
             with self.subTest(missing=missing), self.assertRaises(CommandError) as ctx:
                 self._run(env=env)
             self.assertIn(missing, str(ctx.exception))
+
+
+class PreflightCheckTests(TestCase):
+    """preflight_check exits 0 when migrations applied, non-zero
+    when pending."""
+
+    def test_exits_zero_when_no_pending(self):
+        # In test setup migrations are applied, so the plan should be empty.
+        try:
+            call_command("preflight_check")
+        except SystemExit as exc:
+            self.fail(
+                f"preflight_check should exit 0 in a fully-migrated test "
+                f"DB, raised SystemExit({exc.code}) instead."
+            )
+
+    def test_verbose_success_prints_ok(self):
+        from io import StringIO
+        out = StringIO()
+        call_command("preflight_check", "--verbose", stdout=out)
+        self.assertIn("preflight ok", out.getvalue())
+
+    def test_exits_nonzero_when_pending(self):
+        """Simulate a pending migration by patching the migration_plan."""
+        from unittest.mock import MagicMock, patch
+        from django.db.migrations.migration import Migration
+
+        fake_migration = MagicMock(spec=Migration)
+        fake_migration.app_label = "fake_app"
+        fake_migration.name = "0099_fake"
+
+        plan = [(fake_migration, False)]
+
+        with patch(
+            "django.db.migrations.executor.MigrationExecutor.migration_plan",
+            return_value=plan,
+        ):
+            with self.assertRaises(SystemExit) as cm:
+                call_command("preflight_check")
+            self.assertEqual(cm.exception.code, 1)
+
+    def test_pending_migration_named_in_verbose(self):
+        from io import StringIO
+        from unittest.mock import MagicMock, patch
+        from django.db.migrations.migration import Migration
+
+        fake = MagicMock(spec=Migration)
+        fake.app_label = "fake_app"
+        fake.name = "0099_fake"
+        err = StringIO()
+
+        with patch(
+            "django.db.migrations.executor.MigrationExecutor.migration_plan",
+            return_value=[(fake, False)],
+        ):
+            with self.assertRaises(SystemExit):
+                call_command("preflight_check", "--verbose", stderr=err)
+
+        self.assertIn("fake_app.0099_fake", err.getvalue())

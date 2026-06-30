@@ -450,3 +450,115 @@ def songbook_visibility(request, pk: int):
     songbook.save(update_fields=["visibility", "studio"])
     messages.success(request, f"visibility set to {visibility}")
     return redirect("charts:songbook_list")
+
+
+# ---------------------------------------------------------------------------
+# Rule-firing view — show which engine_rules fire across a chart's slices.
+# Standalone read-only surface. Recording-side conformance is downstream
+# (Phase 2b; #86 + alignment + verdict in a separate view).
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def song_rule_fires(request, song_pk: int):
+    """Render every engine_rule that fires across the chart's slices.
+
+    The corpus becomes *active per chart*: a chart's chord progression
+    is sliced via ``slices_for_song``, then ``fire_all`` returns the
+    matching rules per slice. Output is grouped by Section so the
+    rendered surface reads in form-order.
+
+    No persistence — re-firing is deterministic and fast enough at v1
+    cardinality (768 rules × ~50 chords). When the firing surface
+    grows past ~100k checks per page-view, swap to a RuleFire model.
+    """
+    from collections import OrderedDict
+
+    from apps.engine_rules.firing import fire_all, rule_from_model
+    from apps.engine_rules.models import EngineRule
+    from apps.engine_rules.slicer import slices_for_song
+    from .models import Song
+
+    song = get_object_or_404(
+        Song.objects.prefetch_related(
+            "sections__measures__chord_events",
+        ),
+        pk=song_pk,
+    )
+
+    rule_qs = (
+        EngineRule.objects
+        .filter(is_active=True)
+        .select_related("master", "bundle")
+    )
+    rule_models = list(rule_qs)
+    rule_dicts = [rule_from_model(r) for r in rule_models]
+    rule_by_id = {r.pk: r for r in rule_models}
+    # Need both the firing-dict view and the model view: firing needs
+    # the dict; rendering wants the model's anchor / source_page /
+    # source_pdf_filename / applicability_reasons / master.name for
+    # the token-shape contract. Map rule_id (slug) → model pk.
+    pk_by_rule_id = {r.rule_id: r.pk for r in rule_models}
+
+    # Group: section → list of {slice_summary, fires: [token, ...]}
+    sections: OrderedDict[str, dict] = OrderedDict()
+    total_fires = 0
+
+    for slice_ in slices_for_song(song):
+        results = fire_all(rule_dicts, slice_)
+        if not results:
+            # Still record the slice in the section so an empty chord
+            # renders, but skip if section has no fires at all.
+            pass
+        tokens = []
+        for result in results:
+            rule_pk = pk_by_rule_id.get(result.rule_id)
+            if rule_pk is None:
+                continue
+            rule_obj = rule_by_id[rule_pk]
+            tokens.append({
+                "source": "rule",
+                "id": rule_pk,
+                "payload": {
+                    "rule_id": result.rule_id,
+                    "master_id": rule_obj.master.slug if rule_obj.master_id else None,
+                    "master_name": rule_obj.master.name if rule_obj.master_id else "(unassigned)",
+                    "work_id": rule_obj.work_id,
+                    "name": rule_obj.name,
+                    "anchor": rule_obj.anchor or None,
+                    "source_page": rule_obj.source_page,
+                    "source_pdf_filename": rule_obj.source_pdf_filename or None,
+                    "chapter_n": None,
+                    "section_title": None,
+                    "preference": result.preference,
+                    "polarity": result.polarity,
+                    "quality_binding": list(rule_obj.quality_binding or []),
+                    "applicability_reasons": result.applicability_reasons,
+                    "falsifier": rule_obj.falsifier or None,
+                    "matched_dimensions": result.matched_dimensions,
+                    "then_action": result.then_action,
+                },
+            })
+        if not tokens:
+            continue
+        total_fires += len(tokens)
+        section_label = slice_.section_label or "(unsectioned)"
+        section_block = sections.setdefault(section_label, {
+            "label": section_label,
+            "slices": [],
+            "fire_count": 0,
+        })
+        section_block["slices"].append({
+            "target_chord": slice_.target_chord_canonical,
+            "chord_quality": slice_.chord_quality,
+            "beat_in_measure": slice_.beat_in_measure,
+            "tokens": tokens,
+        })
+        section_block["fire_count"] += len(tokens)
+
+    return render(request, "charts/song_fires.html", {
+        "song": song,
+        "sections": sections,
+        "total_fires": total_fires,
+        "rule_count": len(rule_models),
+    })
