@@ -137,6 +137,23 @@ class BackingTrack(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Which sound bank produced the audio at ``audio_ref`` (#233 / epic
+    # #232). PROTECT — deleting a bank should not orphan rendered
+    # backings. Nullable for back-compat with backings ingested before
+    # the audio epic.
+    bank = models.ForeignKey(
+        "audio.SoundBank",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="backing_tracks",
+        help_text=(
+            "Which SoundBank rendered this backing's audio. "
+            "Nullable for back-compat with backings ingested "
+            "before #233 landed."
+        ),
+    )
+
     class Meta:
         ordering = ["slug"]
 

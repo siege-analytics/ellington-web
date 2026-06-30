@@ -1,8 +1,9 @@
-"""Engine-rules firing engine v0.1 — Python reference implementation.
+"""Engine-rules firing engine v0.2 — Python reference implementation.
 
-Implements ``plugin/docs/engine-rules-firing-spec.md`` v0.2 @ 691aaba
-(the canonical spec; ratified by plugin maintainer 2026-06-17 / #549,
-#555).
+Implements ``plugin/docs/engine-rules-firing-spec.md`` v0.2 (the
+canonical spec; ratified by plugin maintainer 2026-06-17 / #549, #555;
+re-confirmed cross-project on plugin#594 / ellington#226 — line 1 of
+the spec doc is the load-bearing version statement).
 
 Plugin runtime does not currently consume engine_rules (confirmed in
 #586 design). Ellington owns the reference implementation; plugin v2

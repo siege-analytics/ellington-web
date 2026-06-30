@@ -892,3 +892,51 @@ class SyncPluginCatalogsAutoPresetTests(TestCase):
         self.assertEqual(curated.display_name, "Joe Pass × Chord Melody")
         self.assertEqual(curated.idiom, cm)
         self.assertEqual(curated.master, master)
+
+
+# ---------------------------------------------------------------------------
+# #222 — sync_plugin_catalogs --dry-run
+# ---------------------------------------------------------------------------
+
+
+class SyncPluginCatalogsDryRunTests(TestCase):
+    """--dry-run loads + validates each catalog file, prints counts,
+    skips DB writes."""
+
+    def test_no_styles_imported(self):
+        before = Style.objects.count()
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            "--dry-run",
+            stdout=StringIO(),
+        )
+        self.assertEqual(Style.objects.count(), before)
+
+    def test_no_idioms_imported(self):
+        before = Idiom.objects.count()
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            "--dry-run",
+            stdout=StringIO(),
+        )
+        self.assertEqual(Idiom.objects.count(), before)
+
+    def test_output_labeled_and_counts_match_fixture(self):
+        out = StringIO()
+        call_command(
+            "sync_plugin_catalogs",
+            "--plugin-data-dir", str(PLUGIN_FIXTURE_DIR),
+            "--skip-masters",
+            "--dry-run",
+            stdout=out,
+        )
+        text = out.getvalue()
+        self.assertIn("DRY RUN", text)
+        # Fixture: 8 styles + 2 idioms per the existing happy-path tests.
+        self.assertIn("styles.json: 8 entries", text)
+        self.assertIn("idioms.json: 2 entries", text)
+        self.assertIn("masters.json: skipped via --skip-masters", text)
