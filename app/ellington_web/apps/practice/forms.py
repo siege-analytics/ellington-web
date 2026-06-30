@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from django import forms
 
+from apps.audio.models import SoundBank
 from apps.charts.models import Song
 from apps.styles.models import StylePreset
 
@@ -60,6 +61,20 @@ class PracticeSessionForm(forms.Form):
         label="Recording (.wav / .mp3 / .m4a / .flac / .aiff / .ogg)",
         help_text="Upload your Logic export (mixed bounce or isolated track). "
         "Max 500 MB.",
+    )
+    # #244 — pick a sound bank from those discovered by
+    # ``scan_sound_banks`` (#233). When set, the view dispatches
+    # ``render_backing`` after persist so a canonical backing WAV is
+    # available for time-alignment + per-slice analysis. Optional —
+    # legacy sessions without a bank still work; they just won't have
+    # a canonical backing.
+    bank = forms.ModelChoiceField(
+        queryset=SoundBank.objects.filter(is_active=True),
+        required=False,
+        label="Sound bank (for backing render)",
+        help_text="Pick a discovered SoundBank to render a canonical "
+        "backing track that the audio analysis aligns against. Leave "
+        "blank to skip rendering.",
     )
     notes = forms.CharField(
         widget=forms.Textarea(attrs={"rows": 3}),
@@ -131,7 +146,40 @@ class PracticeSessionForm(forms.Form):
                 f"sha256={stored.sha256}; original={cd['recording'].name!r}"
             ),
         )
+
+        # #244 — when a bank is picked, dispatch a Celery task to render
+        # the canonical backing. The resulting BackingTrack row attaches
+        # to the session later (via #235 task internals) so the audio
+        # pipeline has something to align against. Dispatched .delay()
+        # so form save stays fast; pulled out of save() into a tiny
+        # helper so tests can patch the dispatch without mocking the
+        # whole task chain.
+        if cd.get("bank") is not None:
+            self._dispatch_backing_render(
+                session=session,
+                song=cd["song"],
+                bank=cd["bank"],
+                tempo_bpm=cd["tempo_bpm"],
+            )
         return session
+
+    def _dispatch_backing_render(
+        self, *, session: PracticeSession, song, bank, tempo_bpm: int,
+    ) -> None:
+        """Fire-and-forget Celery dispatch for the backing render.
+
+        Pulled out so tests can patch this method without exercising the
+        Celery wire. The task itself (#235) is idempotent on
+        ``(song, bank, tempo, key)``; safe if the user submits the form
+        twice with the same inputs.
+        """
+        from apps.audio.tasks import render_backing
+        render_backing.delay(
+            song_id=song.pk,
+            bank_id=bank.pk,
+            tempo_bpm=tempo_bpm,
+            key=song.key or None,
+        )
 
 
 __all__ = ["PracticeSessionForm"]
