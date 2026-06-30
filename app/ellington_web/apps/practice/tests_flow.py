@@ -386,3 +386,87 @@ class PracticeSessionFormBankPickerTests(TestCase):
         ) as dispatcher:
             form.save(user=self.user)
         dispatcher.assert_not_called()
+# #252 — session detail renders AudioVerdict rows
+# ---------------------------------------------------------------------------
+
+
+class SessionDetailVerdictRenderTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.user = _make_user(username="verdict-render")
+        from django.test import Client
+        cls.client_cls = Client
+
+    def _make_session_with_recording_and_verdict(self):
+        from apps.audio.models import AudioVerdict, PolarityChoice, VerdictChoice
+
+        song = _make_song()
+        preset = _make_preset()
+        session = PracticeSession.objects.create(
+            user=self.user, song=song, target_preset=preset,
+        )
+        rec = Recording.objects.create(
+            session=session, file_ref="recordings/test.wav",
+        )
+        AudioVerdict.objects.create(
+            recording=rec,
+            slice_id="s-1", rule_id="joe-pass-001",
+            rule_polarity=PolarityChoice.POSITIVE,
+            verdict=VerdictChoice.SATISFIES,
+            evidence_type="chord_tone_membership",
+            evidence_payload={
+                "matched": 3, "total": 4,
+                "missing": ["b7"], "extra": [],
+            },
+            verdict_confidence=0.82,
+            rule_evaluability_confidence=1.0,
+        )
+        AudioVerdict.objects.create(
+            recording=rec,
+            slice_id="s-2", rule_id="bergonzi-vox",
+            rule_polarity=PolarityChoice.POSITIVE,
+            verdict=VerdictChoice.NEUTRAL,
+            evidence_type="deferred",
+            evidence_payload={
+                "reason": "voicing-shape eval requires basic_pitch",
+                "deferred_until_version": "v0.2",
+            },
+            verdict_confidence=0.0,
+            rule_evaluability_confidence=0.0,
+        )
+        return session
+
+    def test_detail_renders_verdict_block(self):
+        session = self._make_session_with_recording_and_verdict()
+        client = self.client_cls()
+        client.force_login(self.user)
+        response = client.get(reverse("practice:session_detail", args=[session.id]))
+        self.assertEqual(response.status_code, 200)
+        text = response.content.decode("utf-8")
+        # Block header + count badge
+        self.assertIn("Audio verdicts", text)
+        self.assertIn("2 total", text)
+        # Verdict-row content
+        self.assertIn("Satisfies", text)
+        self.assertIn("Neutral", text)
+        self.assertIn("3 / 4 chord tones matched", text)
+        self.assertIn("missing: b7", text)
+        # Deferred reason rendered
+        self.assertIn("voicing-shape eval requires basic_pitch", text)
+
+    def test_detail_hides_block_when_no_verdicts(self):
+        song = _make_song()
+        preset = _make_preset()
+        session = PracticeSession.objects.create(
+            user=self.user, song=song, target_preset=preset,
+        )
+        Recording.objects.create(
+            session=session, file_ref="recordings/no-verdicts.wav",
+        )
+        client = self.client_cls()
+        client.force_login(self.user)
+        response = client.get(reverse("practice:session_detail", args=[session.id]))
+        self.assertEqual(response.status_code, 200)
+        # Block header should NOT appear
+        self.assertNotIn("Audio verdicts", response.content.decode("utf-8"))

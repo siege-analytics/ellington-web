@@ -1,0 +1,17 @@
+{# Site-wide nav — identical regardless of which engine (Wagtail or
+   Django app) rendered the page. Per #190 routing decision. The id
+   "ellington-nav" is the smoke-test marker for #194 acceptance. #}
+<nav class="site-nav" id="ellington-nav">
+  <a href="/" class="wordmark">Ellington</a>
+  <a href="/rule-review/library/">Rules</a>
+  <a href="/voicings/">Voicings</a>
+  <a href="/charts/imports/">Charts</a>
+  <a href="/practice/sessions/">Practice</a>
+  <a href="/critique/">Critique</a>
+  {% if request.user.is_authenticated %}
+    <span class="user-marker">{{ request.user.username }}</span>
+    <a href="/accounts/logout/">Sign out</a>
+  {% else %}
+    <a href="/accounts/login/">Sign in</a>
+  {% endif %}
+</nav>
