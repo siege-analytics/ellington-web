@@ -75,6 +75,71 @@
 <p><em>You need the Pedagogue role to submit verdicts. Ask Dheeraj.</em></p>
 {% endif %}
 
+<h2>Per-axis confirmation</h2>
+<p class="meta">
+  A different signal from the verdict: is the rule's voicing recommendation
+  correct, is the quality-binding name right, and is the anchor + falsifier
+  pedagogically sound? Confirm each axis independently.
+</p>
+{% if can_write %}
+<form method="post" action="{% url 'rule_review:confirm_rule' rule.pk %}" id="confirm-form">
+  {% csrf_token %}
+
+  <fieldset>
+    <legend>Voicing</legend>
+    <label>
+      <input type="checkbox" name="voicing_confirmed" value="1"
+             {% if my_confirmation.voicing_confirmed %}checked{% endif %}>
+      The voicing recommendation is correct for this chord quality.
+    </label>
+    <p>
+      <label for="voicing_note">Note (optional):</label>
+      <textarea id="voicing_note" name="voicing_note" rows="2">{{ my_confirmation.voicing_note }}</textarea>
+    </p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Naming</legend>
+    <label>
+      <input type="checkbox" name="naming_confirmed" value="1"
+             {% if my_confirmation.naming_confirmed %}checked{% endif %}>
+      The quality-binding token correctly classifies the chord context.
+    </label>
+    <p>
+      <label for="naming_note">Note (optional):</label>
+      <textarea id="naming_note" name="naming_note" rows="2">{{ my_confirmation.naming_note }}</textarea>
+    </p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Lesson</legend>
+    <label>
+      <input type="checkbox" name="lesson_confirmed" value="1"
+             {% if my_confirmation.lesson_confirmed %}checked{% endif %}>
+      The anchor supports the rule and the falsifier is pedagogically sound.
+    </label>
+    <p>
+      <label for="lesson_note">Note (optional):</label>
+      <textarea id="lesson_note" name="lesson_note" rows="2">{{ my_confirmation.lesson_note }}</textarea>
+    </p>
+  </fieldset>
+
+  <p>
+    <label for="overall_confidence">Overall confidence (1-5, optional):</label>
+    <select id="overall_confidence" name="overall_confidence">
+      <option value="">—</option>
+      {% for n in confidence_choices %}
+        <option value="{{ n }}" {% if my_confirmation.overall_confidence == n %}selected{% endif %}>{{ n }}</option>
+      {% endfor %}
+    </select>
+  </p>
+
+  <p><input type="submit" value="Save confirmation"></p>
+</form>
+{% else %}
+<p><em>You need the Pedagogue role to submit confirmations.</em></p>
+{% endif %}
+
 <h2>Discussion ({{ comments|length }})</h2>
 
 {% for c in comments %}

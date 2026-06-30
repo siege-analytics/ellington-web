@@ -1,0 +1,34 @@
+{% extends "voicings/base.html" %}
+
+{% block title %}{{ voicing.name }} — Ellington{% endblock %}
+
+{% block content %}
+<h1>{{ voicing.name }}</h1>
+
+<div class="voicing-card" style="display:inline-block; padding: 1.5em;">
+  {{ svg|safe }}
+</div>
+
+<dl>
+  <dt>Voicing ID</dt><dd><code>{{ voicing.voicing_id }}</code></dd>
+  <dt>Quality</dt><dd>{{ voicing.chord_quality }}</dd>
+  <dt>Category</dt><dd>{{ voicing.category }}</dd>
+  <dt>Root</dt><dd>{{ voicing.root }}</dd>
+  <dt>Strings</dt><dd>{{ voicing.strings }}{% if voicing.tuning %} ({{ voicing.tuning }}){% endif %}</dd>
+  <dt>Fret</dt><dd>{{ voicing.fret_number }} (window: {{ voicing.visible_frets }} frets)</dd>
+  <dt>Notes</dt><dd>{{ voicing.notes|join:", " }}</dd>
+  <dt>Intervals</dt><dd>{{ voicing.intervals|join:", " }}</dd>
+  {% if voicing.suitable_modes %}
+    <dt>Suitable modes</dt><dd>{{ voicing.suitable_modes|join:", " }}</dd>
+  {% endif %}
+  {% if voicing.also_qualities %}
+    <dt>Also satisfies</dt><dd>{{ voicing.also_qualities|join:", " }}</dd>
+  {% endif %}
+  {% if voicing.tags %}
+    <dt>Tags</dt><dd>{{ voicing.tags|join:", " }}</dd>
+  {% endif %}
+  <dt>Bundle</dt><dd><code>{{ voicing.bundle.plugin_commit_sha|slice:":8" }}</code> imported {{ voicing.bundle.imported_at|date:"Y-m-d" }}</dd>
+</dl>
+
+<p><a href="{% url 'voicings:voicing_list' %}">← back to voicings</a></p>
+{% endblock %}
