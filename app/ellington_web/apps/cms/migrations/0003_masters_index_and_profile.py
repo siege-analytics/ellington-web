@@ -15,7 +15,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("cms", "0001_initial"),
+        ("cms", "0002_pedagogue_group"),
         ("wagtailcore", "0001_initial"),
         ("wagtailimages", "0001_initial"),
         ("styles", "0001_initial"),
