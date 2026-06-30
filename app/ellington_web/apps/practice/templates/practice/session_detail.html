@@ -47,6 +47,50 @@
             </form>
           </div>
           <small>{{ rec.notes|linebreaksbr }}</small>
+
+          {# #252 — AudioVerdict block per recording. Hidden when empty. #}
+          {% if rec.audio_verdicts.all %}
+            <details class="audio-verdicts" open>
+              <summary>
+                <strong>Audio verdicts</strong>
+                <span class="badge badge--complete">{{ rec.audio_verdicts.all|length }} total</span>
+              </summary>
+              <ul class="audio-verdict-list">
+                {% for v in rec.audio_verdicts.all %}
+                  <li class="audio-verdict audio-verdict--{{ v.verdict }}">
+                    <span class="verdict-badge verdict-badge--{{ v.verdict }}">{{ v.get_verdict_display }}</span>
+                    <span class="meta">
+                      slice <code>{{ v.slice_id }}</code> ·
+                      rule <code>{{ v.rule_id }}</code> ·
+                      confidence {{ v.verdict_confidence|floatformat:2 }}
+                    </span>
+                    <div class="audio-verdict-evidence">
+                      {% if v.evidence_type == "chord_tone_membership" %}
+                        {{ v.evidence_payload.matched }} / {{ v.evidence_payload.total }} chord tones matched
+                        {% if v.evidence_payload.missing %}
+                          · missing: {{ v.evidence_payload.missing|join:", " }}
+                        {% endif %}
+                        {% if v.evidence_payload.extra %}
+                          · extra: {{ v.evidence_payload.extra|join:", " }}
+                        {% endif %}
+                      {% elif v.evidence_type == "scale_drift" %}
+                        median drift {{ v.evidence_payload.median_drift_semitones|floatformat:2 }}st ·
+                        max {{ v.evidence_payload.max_drift_semitones|floatformat:2 }}st ·
+                        {{ v.evidence_payload.drift_frame_count }} frame(s)
+                      {% elif v.evidence_type == "deferred" %}
+                        <em>deferred:</em> {{ v.evidence_payload.reason }}
+                        {% if v.evidence_payload.deferred_until_version %}
+                          <small>(awaiting {{ v.evidence_payload.deferred_until_version }})</small>
+                        {% endif %}
+                      {% else %}
+                        <code>{{ v.evidence_type }}</code> evidence
+                      {% endif %}
+                    </div>
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
+          {% endif %}
         </li>
       {% endfor %}
     </ul>
