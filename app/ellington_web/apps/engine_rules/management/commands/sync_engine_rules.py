@@ -125,6 +125,15 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--latest-release",
+            action="store_true",
+            help=(
+                "Auto-resolve the highest-semver ``engine-rules-v*``"
+                " release tag from the GitHub Releases API. Replaces"
+                " the manifests-side curl+jq init container (#157)."
+            ),
+        )
+        parser.add_argument(
             "--bundle-path",
             default=None,
             help=(
@@ -149,11 +158,21 @@ class Command(BaseCommand):
             settings, "ENGINE_RULES_RELEASE_TAG", None
         )
         bundle_path = options.get("bundle_path")
+        latest = options.get("latest_release")
+
+        if latest:
+            if release_tag or bundle_path:
+                raise CommandError(
+                    "--latest-release is mutually exclusive with"
+                    " --release-tag and --bundle-path"
+                )
+            release_tag = self._resolve_latest_release_tag()
+            self.stdout.write(f"resolved --latest-release → {release_tag}")
 
         if not release_tag and not bundle_path:
             raise CommandError(
-                "no release tag set: pass --release-tag, --bundle-path,"
-                " or set settings.ENGINE_RULES_RELEASE_TAG"
+                "no release tag set: pass --release-tag, --latest-release,"
+                " --bundle-path, or set settings.ENGINE_RULES_RELEASE_TAG"
             )
 
         with _open_bundle(bundle_path, release_tag) as (tar, manifest_dict):
@@ -189,6 +208,60 @@ class Command(BaseCommand):
         )
 
     # ---- validation -----------------------------------------------------
+
+    def _resolve_latest_release_tag(self) -> str:
+        """Return the highest-semver ``engine-rules-v*`` tag from
+        the chord-library plugin's GitHub Releases API.
+
+        Per #157 — removes the need for an init container in the
+        manifests CronJob to do this lookup itself.
+
+        Picks lexically-latest after stripping the ``engine-rules-v``
+        prefix; assumes semver release tags like ``engine-rules-v0.3.0``.
+        Pre-releases (``-rc1`` suffix) are included; the lexical sort
+        keeps them behind their stable counterparts because ``"0" < "rc"``
+        in ASCII, which is the desired behavior.
+        """
+        url = (
+            "https://api.github.com/repos/"
+            "siege-analytics/musescore4-chord-library-plugin/releases"
+            "?per_page=100"
+        )
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "ellington-web sync_engine_rules/2"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            releases = json.load(resp)
+
+        prefix = "engine-rules-v"
+        candidates = [
+            r["tag_name"] for r in releases
+            if r.get("tag_name", "").startswith(prefix)
+            and not r.get("draft")
+        ]
+        if not candidates:
+            raise CommandError(
+                f"no engine-rules-v* releases found at {url}"
+            )
+
+        # Sort by the version suffix; lexical sort works for semver
+        # ASCII strings ("0.3.0" < "0.10.0" is BROKEN under naive sort,
+        # so split on dots and sort tuple-of-ints).
+        def version_key(tag: str) -> tuple:
+            ver = tag[len(prefix):]
+            parts = []
+            for piece in ver.split("."):
+                # Strip pre-release marker like '0rc1' from minor segments
+                num = ""
+                for ch in piece:
+                    if ch.isdigit():
+                        num += ch
+                    else:
+                        break
+                parts.append(int(num) if num else 0)
+            return tuple(parts)
+
+        return max(candidates, key=version_key)
 
     def _validate_manifest(self, manifest: dict[str, Any]) -> None:
         """Refuse bundles whose min_consumer_version exceeds ours."""

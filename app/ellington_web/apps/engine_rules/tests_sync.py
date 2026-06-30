@@ -491,3 +491,84 @@ class TestSemverHelper(TestCase):
 
     def test_equal_versions(self) -> None:
         self.assertFalse(sync_engine_rules._semver_gt("0.1.0", "0.1.0"))
+
+
+# ---------------------------------------------------------------------------
+# #157 — --latest-release resolver
+# ---------------------------------------------------------------------------
+
+
+from unittest.mock import patch, MagicMock  # noqa: E402
+
+from apps.engine_rules.management.commands.sync_engine_rules import Command  # noqa: E402
+
+
+class LatestReleaseResolverTests(TestCase):
+    """The --latest-release flag picks the highest-semver tag from
+    the plugin's GitHub Releases API."""
+
+    def _mock_releases(self, tag_names):
+        """Build a fake GitHub Releases API response payload."""
+        return [{"tag_name": t, "draft": False} for t in tag_names]
+
+    def _patch_urlopen(self, payload):
+        """Return a urlopen patcher that yields the payload."""
+        resp = MagicMock()
+        resp.read.return_value = json.dumps(payload).encode()
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = lambda *a: False
+        # urlopen returns a ctx manager; the command calls json.load(resp)
+        # which calls resp.read(). Wrap as needed.
+        return patch(
+            "apps.engine_rules.management.commands.sync_engine_rules"
+            ".urllib.request.urlopen",
+            return_value=resp,
+        )
+
+    def test_picks_highest_semver(self):
+        cmd = Command()
+        payload = self._mock_releases([
+            "engine-rules-v0.1.0",
+            "engine-rules-v0.3.0",
+            "engine-rules-v0.2.5",
+        ])
+        with self._patch_urlopen(payload):
+            tag = cmd._resolve_latest_release_tag()
+        self.assertEqual(tag, "engine-rules-v0.3.0")
+
+    def test_double_digit_minor_handled(self):
+        """0.10.0 > 0.9.0 (lexical sort would lose this)."""
+        cmd = Command()
+        payload = self._mock_releases([
+            "engine-rules-v0.9.0",
+            "engine-rules-v0.10.0",
+        ])
+        with self._patch_urlopen(payload):
+            tag = cmd._resolve_latest_release_tag()
+        self.assertEqual(tag, "engine-rules-v0.10.0")
+
+    def test_filters_non_engine_rules_tags(self):
+        cmd = Command()
+        payload = self._mock_releases([
+            "v1.0.0",  # plugin app release, not engine-rules
+            "engine-rules-v0.1.0",
+            "voicings-v0.1.0",
+        ])
+        with self._patch_urlopen(payload):
+            tag = cmd._resolve_latest_release_tag()
+        self.assertEqual(tag, "engine-rules-v0.1.0")
+
+    def test_empty_releases_raises(self):
+        from django.core.management.base import CommandError
+        cmd = Command()
+        with self._patch_urlopen([]):
+            with self.assertRaises(CommandError):
+                cmd._resolve_latest_release_tag()
+
+    def test_no_engine_rules_releases_raises(self):
+        from django.core.management.base import CommandError
+        cmd = Command()
+        payload = self._mock_releases(["v1.0.0", "voicings-v0.1.0"])
+        with self._patch_urlopen(payload):
+            with self.assertRaises(CommandError):
+                cmd._resolve_latest_release_tag()
