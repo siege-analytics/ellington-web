@@ -1,0 +1,78 @@
+{% extends "rule_review/base.html" %}
+
+{% block title %}Confirmation queue — Ellington{% endblock %}
+
+{% block content %}
+<h1>Confirmation queue</h1>
+<p class="meta">
+  Per-axis confirmation aggregates across pedagogues. Use the sort
+  knobs to surface rules with low confidence or with cross-pedagogue
+  disagreement on a specific axis.
+</p>
+
+<form method="get" class="filters" style="margin-bottom: 1em;">
+  <label>Sort:
+    <select name="sort" onchange="this.form.submit()">
+      {% for s in sort_choices %}
+        <option value="{{ s }}" {% if s == filter_sort %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Axis:
+    <select name="axis" onchange="this.form.submit()">
+      <option value="">— any —</option>
+      <option value="voicing" {% if filter_axis == "voicing" %}selected{% endif %}>voicing</option>
+      <option value="naming" {% if filter_axis == "naming" %}selected{% endif %}>naming</option>
+      <option value="lesson" {% if filter_axis == "lesson" %}selected{% endif %}>lesson</option>
+    </select>
+  </label>
+  <label>Master:
+    <input type="text" name="master" value="{{ filter_master }}" placeholder="slug" size="14">
+  </label>
+  <button type="submit">Apply</button>
+  {% if filter_master or filter_axis %}
+    <a href="{% url 'rule_review:confirmation_queue' %}">Clear</a>
+  {% endif %}
+</form>
+
+{% if page_obj.object_list %}
+<table>
+  <thead>
+    <tr>
+      <th>Rule</th>
+      <th>Master</th>
+      <th>Voicing (yes/no)</th>
+      <th>Naming (yes/no)</th>
+      <th>Lesson (yes/no)</th>
+      <th>n</th>
+      <th>avg conf.</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for rule in page_obj.object_list %}
+      <tr>
+        <td><a href="{% url 'rule_review:rule_detail' rule.pk %}">{{ rule.name }}</a> <span class="meta">{{ rule.rule_id }}</span></td>
+        <td>{{ rule.master.name|default:"—" }}</td>
+        <td>{{ rule.voicing_yes }} / {{ rule.voicing_no }}</td>
+        <td>{{ rule.naming_yes }} / {{ rule.naming_no }}</td>
+        <td>{{ rule.lesson_yes }} / {{ rule.lesson_no }}</td>
+        <td>{{ rule.confirmation_count }}</td>
+        <td>{% if rule.avg_confidence %}{{ rule.avg_confidence|floatformat:2 }}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination" style="margin-top: 1.5em;">
+  {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}&sort={{ filter_sort }}&axis={{ filter_axis }}&master={{ filter_master }}">prev</a>
+  {% endif %}
+  <span>page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}&sort={{ filter_sort }}&axis={{ filter_axis }}&master={{ filter_master }}">next</a>
+  {% endif %}
+</div>
+{% else %}
+<p><em>No rules have confirmations matching these filters.</em></p>
+{% endif %}
+{% endblock %}
