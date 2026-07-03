@@ -29,6 +29,8 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from apps.core.roles import is_admin, is_pedagogue
 from apps.engine_rules.models import EngineRule
+from apps.voicings.fretboard import render_svg
+from apps.voicings.lookup import resolve_voicings_for_rule
 
 from .models import (
     PedagogueConfirmation,
@@ -182,6 +184,26 @@ def rule_detail(request: HttpRequest, pk: int) -> HttpResponse:
     response_counts = rule.responses.values("verdict").annotate(n=Count("id"))
     counts_map = {row["verdict"]: row["n"] for row in response_counts}
 
+    # Voicing preview candidates + inline SVGs (#286). Zip'd list so
+    # the template can iterate one collection instead of parallel
+    # indexing. Cap at 6 so a rule with an over-broad quality binding
+    # doesn't render 30 diagrams.
+    candidate_voicings = list(resolve_voicings_for_rule(rule)[:6])
+    voicing_previews = [
+        {
+            "voicing": v,
+            "svg": render_svg(
+                strings=v.strings,
+                fret_number=v.fret_number,
+                visible_frets=v.visible_frets,
+                dots=v.dots or [],
+                mutes=v.mutes or [],
+                open_strings=v.open_strings or [],
+            ),
+        }
+        for v in candidate_voicings
+    ]
+
     return render(request, "rule_review/rule_detail.html", {
         "rule": rule,
         "my_response": my_response,
@@ -192,6 +214,7 @@ def rule_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "counts": counts_map,
         "can_write": is_pedagogue(request.user) or is_admin(request.user),
         "confidence_choices": [1, 2, 3, 4, 5],
+        "voicing_previews": voicing_previews,
     })
 
 
@@ -234,11 +257,35 @@ def confirm_rule(request: HttpRequest, pk: int) -> HttpResponse:
             messages.error(request, "Confidence must be in the 1-5 range.")
             return redirect("rule_review:rule_detail", pk=pk)
 
+    # Optional voicing pin (#286). Whitelist against the resolver's
+    # candidate set so we can't be told to pin an arbitrary voicing —
+    # only ones that actually match this rule.
+    voicing_pk_raw = (request.POST.get("voicing_id") or "").strip()
+    pinned_voicing = None
+    if voicing_pk_raw:
+        try:
+            voicing_pk = int(voicing_pk_raw)
+        except ValueError:
+            messages.error(request, "Invalid voicing selection.")
+            return redirect("rule_review:rule_detail", pk=pk)
+        allowed_ids = set(
+            resolve_voicings_for_rule(rule).values_list("pk", flat=True)
+        )
+        if voicing_pk not in allowed_ids:
+            messages.error(
+                request,
+                "Selected voicing is not a candidate for this rule.",
+            )
+            return redirect("rule_review:rule_detail", pk=pk)
+        from apps.voicings.models import Voicing
+        pinned_voicing = Voicing.objects.get(pk=voicing_pk)
+
     PedagogueConfirmation.objects.update_or_create(
         rule=rule, user=request.user,
         defaults={
             "voicing_confirmed": _bool("voicing_confirmed"),
             "voicing_note": (request.POST.get("voicing_note") or "").strip(),
+            "voicing": pinned_voicing,
             "naming_confirmed": _bool("naming_confirmed"),
             "naming_note": (request.POST.get("naming_note") or "").strip(),
             "lesson_confirmed": _bool("lesson_confirmed"),

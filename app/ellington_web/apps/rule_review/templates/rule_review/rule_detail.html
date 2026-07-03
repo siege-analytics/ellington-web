@@ -87,10 +87,36 @@
 
   <fieldset>
     <legend>Voicing</legend>
+
+    {% if voicing_previews|length == 0 %}
+      <p class="empty-state">
+        No matching voicing in the ingested corpus. Confirm the rule's
+        voicing recommendation at the schema/text level below.
+      </p>
+    {% elif voicing_previews|length == 1 %}
+      <div class="voicing-preview">
+        {{ voicing_previews.0.svg|safe }}
+        <small>{{ voicing_previews.0.voicing.name }}</small>
+      </div>
+      <input type="hidden" name="voicing_id" value="{{ voicing_previews.0.voicing.pk }}">
+    {% else %}
+      <p>Multiple candidate voicings match this rule. Pick the one you're confirming:</p>
+      <div class="voicing-candidates">
+        {% for preview in voicing_previews %}
+          <label class="voicing-candidate">
+            <input type="radio" name="voicing_id" value="{{ preview.voicing.pk }}"
+                   {% if my_confirmation.voicing_id == preview.voicing.pk %}checked{% endif %}>
+            {{ preview.svg|safe }}
+            <small>{{ preview.voicing.name }}</small>
+          </label>
+        {% endfor %}
+      </div>
+    {% endif %}
+
     <label>
       <input type="checkbox" name="voicing_confirmed" value="1"
              {% if my_confirmation.voicing_confirmed %}checked{% endif %}>
-      The voicing recommendation is correct for this chord quality.
+      The voicing recommendation above is correct for this chord quality.
     </label>
     <p>
       <label for="voicing_note">Note (optional):</label>

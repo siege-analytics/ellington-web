@@ -318,3 +318,34 @@ button.destructive, input[type="submit"].destructive {
 .badge--complete { background: var(--verdict-accept-bg); color: var(--verdict-accept); }
 .badge--partial { background: var(--verdict-close-but-bg); color: var(--verdict-close-but); }
 .badge--failed { background: var(--verdict-reject-bg); color: var(--verdict-reject); }
+
+/* Voicing preview inside the confirmation form (#286).
+   Single voicing = centered block. Multiple candidates = 2-3 col grid
+   of radio-selectable diagrams. */
+.voicing-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1em;
+}
+.voicing-preview small { color: var(--fg-muted); margin-top: 0.3em; }
+
+.voicing-candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1em;
+  margin: 0.75em 0 1.25em 0;
+}
+.voicing-candidate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5em;
+  border: 1px solid var(--bg-elev);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.voicing-candidate:hover { border-color: var(--chord-dom7); }
+.voicing-candidate input[type="radio"] { margin-bottom: 0.25em; }
+.voicing-candidate small { color: var(--fg-muted); margin-top: 0.3em; }
+.fretboard { max-width: 100%; height: auto; }
