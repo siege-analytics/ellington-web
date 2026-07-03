@@ -244,6 +244,23 @@ class PedagogueConfirmation(models.Model):
         " caveats.",
     )
 
+    # Which specific voicing the pedagogue was looking at when they
+    # confirmed. Null when the rule has no matching voicing in the
+    # ingested corpus (schema-only confirmation) or when only one
+    # candidate matched (no selection needed). Populated when >1
+    # candidate matched and the pedagogue picked one. SET_NULL on
+    # voicing delete so the confirmation signal survives corpus
+    # rotation. Per #286.
+    voicing = models.ForeignKey(
+        "voicings.Voicing",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="Which candidate voicing this confirmation is pinned"
+        " to. Nullable — no pin required when candidates == 0 or 1.",
+    )
+
     naming_confirmed = models.BooleanField(
         default=False,
         help_text="Is the rule's quality_binding canonical token"
