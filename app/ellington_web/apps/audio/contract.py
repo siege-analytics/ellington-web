@@ -58,6 +58,14 @@ class SliceObservation:
     off_chord_tones: tuple[str, ...] = field(default_factory=tuple)
     off_scale_tones: tuple[str, ...] = field(default_factory=tuple)
     scale_drift_semitones: float = 0.0
+    # Per-frame drift measurements (§10 canonical, per #265).
+    # When non-empty, comparator computes median / max / frame-count
+    # from this array against the rule's threshold. When empty (v0.1
+    # scalar-only pipelines), comparator falls back to the scalar
+    # ``scale_drift_semitones`` value (median == max == scalar,
+    # frame_count = 0/1 vs threshold). Populated by the basic_pitch
+    # v2 pitch trace (#242 v2) once wired.
+    scale_drift_per_frame_semitones: tuple[float, ...] = field(default_factory=tuple)
     alignment_confidence: float = 0.0
     pitch_extraction_confidence: float = 0.0
     observation_confidence: float = 0.0

@@ -266,24 +266,53 @@ def _evaluate_scale_drift(
 
     Threshold: use the rule's own ``max_scale_drift_semitones``
     when provided (canonical §10 key per plugin#596 / #263), or
-    the comparator default. ``drift_frame_count`` is the count of
-    frames whose drift exceeds the threshold. SliceObservation
-    v0.1 carries scalar drift only; we model that as 1 frame and
-    report 0/1 accordingly. Per-frame drift extraction is tracked
-    in the basic_pitch upgrade (#242 v2 / #265).
+    the comparator default.
+
+    Per-frame vs scalar drift (#265):
+    - When ``obs.scale_drift_per_frame_semitones`` is populated (v2
+      pitch trace via basic_pitch), compute median / max / frame
+      count from the per-frame array. This is the canonical §10
+      ScaleDriftEvidence shape the plugin fixture prescribes.
+    - When empty (v0.1 scalar-only), fall back to the scalar
+      ``obs.scale_drift_semitones``: median == max == scalar,
+      frame_count = 0 if scalar ≤ threshold else 1.
     """
     then_action = then_action or {}
     threshold = then_action.get(
         "max_scale_drift_semitones", _SCALE_DRIFT_THRESHOLD_SEMITONES,
     )
 
-    drift_frame_count = 1 if obs.scale_drift_semitones > threshold else 0
+    per_frame = tuple(obs.scale_drift_per_frame_semitones or ())
+    if per_frame:
+        # Canonical path (#265). Median / max derived from the frame
+        # array; frame count is the number of frames whose drift
+        # strictly exceeds the rule threshold. Sort once and pick
+        # the middle to avoid depending on statistics.median which
+        # varies its return type across ints/floats.
+        sorted_drifts = sorted(per_frame)
+        n = len(sorted_drifts)
+        if n % 2 == 1:
+            median = sorted_drifts[n // 2]
+        else:
+            median = 0.5 * (sorted_drifts[n // 2 - 1] + sorted_drifts[n // 2])
+        max_drift = sorted_drifts[-1]
+        drift_frame_count = sum(1 for d in per_frame if d > threshold)
+    else:
+        # v0.1 fallback path: scalar drift stands in for the array.
+        median = obs.scale_drift_semitones
+        max_drift = obs.scale_drift_semitones
+        drift_frame_count = 1 if obs.scale_drift_semitones > threshold else 0
+
     evidence = ScaleDriftEvidence(
-        median_drift_semitones=obs.scale_drift_semitones,
-        max_drift_semitones=obs.scale_drift_semitones,
+        median_drift_semitones=median,
+        max_drift_semitones=max_drift,
         drift_frame_count=drift_frame_count,
     )
-    low_drift = obs.scale_drift_semitones <= threshold
+    # Verdict boundary: max drift is what "did you break the rule"
+    # is asking about — a single frame above threshold is a drift
+    # event regardless of the aggregate median. Preserves the v0.1
+    # scalar semantics (scalar was effectively a max-shaped signal).
+    low_drift = max_drift <= threshold
     verdict_label = "satisfies" if low_drift else "violates"
     return evidence, verdict_label
 

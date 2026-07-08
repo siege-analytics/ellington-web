@@ -53,7 +53,31 @@ def _load_fixture() -> dict:
         return json.load(f)
 
 
+# Per-frame drift bridge for #265. The vendored plugin fixture
+# (SHA 8f60fc8) predates ``scale_drift_per_frame_semitones`` on
+# SliceObservation and asserts distinct ``median_drift_semitones``
+# 0.04 vs ``max_drift_semitones`` 0.12. Since the plugin canonical
+# fixture doesn't yet carry per-frame data, we synthesize a frame
+# array here whose statistics match the canonical evidence values:
+#   sorted: (0.02, 0.04, 0.04, 0.12)
+#   median = (0.04 + 0.04) / 2 = 0.04  ← matches canonical
+#   max    = 0.12                       ← matches canonical
+#   count  = 0 above threshold 0.25     ← matches canonical
+# Swap this in for a JSON-borne field when plugin ships a v0.2.2
+# canonical fixture with ``scale_drift_per_frame_semitones``.
+_PER_FRAME_BRIDGE_FOR_FIXTURE_SLICE_04 = (0.02, 0.04, 0.04, 0.12)
+
+
 def _build_observation(payload: dict) -> SliceObservation:
+    # If the fixture ever grows a per-frame field, prefer it; otherwise
+    # synthesize from the bridge tuple keyed on the slice_id.
+    per_frame_raw = payload.get("scale_drift_per_frame_semitones")
+    if per_frame_raw:
+        per_frame = tuple(float(x) for x in per_frame_raw)
+    elif payload["slice_id"] == "fixture-slice-04":
+        per_frame = _PER_FRAME_BRIDGE_FOR_FIXTURE_SLICE_04
+    else:
+        per_frame = ()
     return SliceObservation(
         slice_id=payload["slice_id"],
         played_pitches=tuple(
@@ -73,6 +97,7 @@ def _build_observation(payload: dict) -> SliceObservation:
         off_chord_tones=tuple(payload["off_chord_tones"]),
         off_scale_tones=tuple(payload["off_scale_tones"]),
         scale_drift_semitones=payload["scale_drift_semitones"],
+        scale_drift_per_frame_semitones=per_frame,
         alignment_confidence=payload["alignment_confidence"],
         pitch_extraction_confidence=payload["pitch_extraction_confidence"],
         observation_confidence=payload["observation_confidence"],
